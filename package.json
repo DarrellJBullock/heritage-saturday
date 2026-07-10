@@ -7,6 +7,8 @@
     "packages/*"
   ],
   "scripts": {
+    "//prepare": "Points git at the versioned .githooks/ dir. Guarded: `npm ci` outside a git checkout must not fail.",
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "//build": "Dependency order, not alphabetical. `--workspaces` runs apps/* before packages/*, so a clean checkout would compile apps/worker before the simulation-engine it imports. Each layer only depends on layers above it.",
     "build": "npm run build:packages && npm run build:apps",
     "build:packages": "npm run build -w @heritage-saturday/shared && npm run build -w @heritage-saturday/simulation-engine -w @heritage-saturday/importers -w @heritage-saturday/validation",

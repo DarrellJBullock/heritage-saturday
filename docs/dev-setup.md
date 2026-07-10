@@ -80,11 +80,34 @@ docker compose down -v
 See the root `Makefile` for shortcuts: `make db-up`, `make db-down`, `make db-migrate`,
 `make db-reset`, `make db-status`.
 
+## CI and the pre-push hook
+
+Every push and pull request runs `.github/workflows/ci.yml`, which has three jobs:
+
+| Job | Covers |
+|---|---|
+| `check` | cold build (proves the dependency ordering), typecheck, unit tests |
+| `worker-smoke` | the BullMQ transport against a real Redis service |
+| `e2e` | the HTTP suite against a real Postgres service |
+
+**CI is the real gate.** Open a PR and wait for the three jobs to go green before merging.
+
+A `pre-push` hook (`.githooks/pre-push`, installed automatically by the root `prepare`
+script) runs `npm run typecheck` and `npm test` when you push to `main`. It skips the e2e
+and worker-smoke suites, which need Postgres and Redis; CI covers those. Bypass it with
+`SKIP_HOOKS=1 git push`.
+
+The hook is **advisory, not enforcement**. It is trivially bypassed and protects nothing on
+the server. Branch protection, rulesets, and auto-merge would enforce this properly, but all
+three require GitHub Pro for a private repository — on the Free plan the protection and
+ruleset APIs return 403, and `allow_auto_merge` silently stays `false`. If this repo is ever
+made public or upgraded, enable those and this hook becomes a convenience rather than the
+only line of defence.
+
 ## Follow-ups (not in this Capability-1 slice)
-- `apps/worker` and `apps/web` service definitions in `docker-compose.yml` once those apps
-  are scaffolded.
+- `apps/web` service definition in `docker-compose.yml`. (`apps/worker` is scaffolded but
+  intentionally idle — nothing enqueues in Capability 1.)
 - An `apps/api` Dockerfile, if/when the API needs to run containerized rather than on the host.
-- Seed script + `db:seed` command.
 - Storage bucket setup (Supabase Storage/S3-compatible) — not needed for Capability 1 since
   uploaded roster files are parsed in-memory and not required to be retained
   (`company-docs/architecture.md` §8).
