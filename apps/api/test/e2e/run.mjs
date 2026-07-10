@@ -250,6 +250,73 @@ async function main() {
   ok('reading another user\'s league detail is 404 (not 403)', leagueBAsA.status === 404, leagueBAsA.body);
 
   // -------------------------------------------------------------------
+  section('Capability 2 — template generation: a fresh league is playable with no import');
+  // -------------------------------------------------------------------
+  const gen = await api('POST', '/leagues', {
+    user: USER_A,
+    body: { name: 'Generated League', size: 8, templateKey: 'heritage-classic', seed: 'gen-seed-1' },
+  });
+  ok('POST /leagues with a templateKey creates a generated league (201)', gen.status === 201, gen.body);
+  ok('the generated league reports its full team count', gen.body.teamCount === 8, gen.body);
+
+  const genDetail = await api('GET', `/leagues/${gen.body.id}`, { user: USER_A });
+  const genRosterId = genDetail.body.rosters?.[0]?.id;
+  ok('the generated league has one system roster holding its teams',
+    genDetail.body.rosters?.length === 1 && genDetail.body.rosters[0].teamCount === 8, genDetail.body);
+
+  const genRoster = await api('GET', `/rosters/${genRosterId}`, { user: USER_A });
+  const genTeams = genRoster.body.teams ?? [];
+  ok('generated teams have branding (name, city, conference, division)',
+    genTeams.length === 8 && genTeams.every((t) => t.teamName && t.city && t.conference && t.division), genTeams[0]);
+
+  // Determinism: the same seed regenerates the identical set of team names.
+  const gen2 = await api('POST', '/leagues', {
+    user: USER_A,
+    body: { name: 'Generated League 2', size: 8, templateKey: 'heritage-classic', seed: 'gen-seed-1' },
+  });
+  const gen2Detail = await api('GET', `/leagues/${gen2.body.id}`, { user: USER_A });
+  const gen2Roster = await api('GET', `/rosters/${gen2Detail.body.rosters[0].id}`, { user: USER_A });
+  const names1 = genTeams.map((t) => t.teamName).sort();
+  const names2 = (gen2Roster.body.teams ?? []).map((t) => t.teamName).sort();
+  ok('same seed regenerates identical team names (deterministic)',
+    JSON.stringify(names1) === JSON.stringify(names2), { names1, names2 });
+
+  // Every generated team auto-generates a LEGAL depth chart on first read — no import needed.
+  const genDc0 = await api('GET', `/depth-charts/${genTeams[0].id}`, { user: USER_A });
+  const genDc1 = await api('GET', `/depth-charts/${genTeams[1].id}`, { user: USER_A });
+  ok('generated team A depth chart is legal (covers required positions)',
+    genDc0.status === 200 && genDc0.body.legal === true && genDc0.body.warnings.length === 0, genDc0.body);
+  ok('generated team B depth chart is legal', genDc1.status === 200 && genDc1.body.legal === true, genDc1.body);
+
+  // The payoff: simulate a game between two generated teams with no import at all.
+  const genGame = await api('POST', `/leagues/${gen.body.id}/games/simulate`, {
+    user: USER_A,
+    body: {
+      homeTeamId: genTeams[0].id, awayTeamId: genTeams[1].id,
+      homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'SPREAD', awayDefArchetype: 'NICKEL_ZONE',
+      seed: 'gen-game-1',
+    },
+  });
+  ok('a game between two generated teams simulates to COMPLETE with no import',
+    genGame.status === 201 && genGame.body.status === 'COMPLETE', genGame.body);
+  const genBox = await api('GET', `/leagues/${gen.body.id}/games/${genGame.body.gameId}/box-score`, { user: USER_A });
+  ok('the generated game produces a box score',
+    genBox.status === 200 && !!genBox.body.teams?.home && !!genBox.body.teams?.away &&
+      genBox.body.playerStats?.home.length > 0, genBox.body);
+
+  // A generated league must not be playable across leagues: its teams are not in the empty LEAGUE_A.
+  const crossLeague = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
+    user: USER_A,
+    body: {
+      homeTeamId: genTeams[0].id, awayTeamId: genTeams[1].id,
+      homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3',
+    },
+  });
+  ok('generated teams cannot be played under a different league (400)', crossLeague.status === 400, crossLeague.body);
+
+  // -------------------------------------------------------------------
   section('Story 1.1 / 1.5 / 1.8 — valid CSV import: preview + commit + history');
   // -------------------------------------------------------------------
   const validCsv = await uploadAndCommit(USER_A, 'valid-roster.csv', 'valid csv');
