@@ -11,6 +11,22 @@ export const POSITIONS = [
 ] as const;
 export type Position = (typeof POSITIONS)[number];
 
+/**
+ * Minimum-viable-lineup positions per architecture.md §6 and product-spec Open Question #1.
+ * KR/PR are return specialists, not required to field a legal lineup in Cap 1.
+ *
+ * Lives here rather than in apps/api because both `packages/validation` (which decides at
+ * stage time whether an imported depth chart can be used) and `apps/api` (which decides at
+ * commit time whether to persist it) must agree on the same list.
+ */
+export const REQUIRED_STARTING_POSITIONS: Position[] = [
+  'QB', 'RB', 'WR', 'TE',
+  'LT', 'LG', 'C', 'RG', 'RT',
+  'LE', 'RE', 'DT', 'LOLB', 'MLB', 'ROLB',
+  'CB', 'FS', 'SS',
+  'K', 'P',
+];
+
 export const OFFENSIVE_ARCHETYPES = [
   'BALANCED', 'POWER_RUN', 'SPREAD', 'VERTICAL_PASSING',
   'WEST_COAST', 'OPTION_RPO', 'PLAY_ACTION_HEAVY',

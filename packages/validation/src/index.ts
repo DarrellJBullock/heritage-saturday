@@ -1,4 +1,4 @@
-import { NON_BLOCKING_SHEETS } from '@heritage-saturday/shared';
+import { NON_BLOCKING_SHEETS, REQUIRED_STARTING_POSITIONS } from '@heritage-saturday/shared';
 import { RawImportRow, ValidatedImportRow } from './types';
 import {
   validateCoachRow,
@@ -54,8 +54,57 @@ export function validateImportRows(rows: RawImportRow[]): ValidatedImportRow[] {
   // Must run after applyCrossRowRules: a duplicate team_id marks the teams row ERROR,
   // and a row pointing at a team that won't be committed is itself an orphan.
   applyOrphanReferenceRules(results);
+  // Must run after the orphan rules: an orphaned row is not a survivor, so it cannot
+  // count towards covering a required position. Mirrors classifyDepthChartRows, which
+  // makes the same judgement at commit time.
+  applyIncompleteDepthChartRule(results);
 
   return results;
+}
+
+/**
+ * A depth chart that does not cover every required starting position is discarded at
+ * commit and replaced by auto-generation (architecture.md §5). That is intended behaviour,
+ * so these rows are not errors — but silently dropping a chart the user hand-built is not
+ * acceptable either. WARNING tells them their chart will not be used, and names exactly
+ * which positions are missing so the fix is obvious.
+ *
+ * Applies only to teams that will actually be committed: if the team itself is missing,
+ * every row already carries the orphan message, which is the truer root cause.
+ */
+function applyIncompleteDepthChartRule(rows: ValidatedImportRow[]): void {
+  const sheetOf = (r: ValidatedImportRow) => r.sheet.toLowerCase();
+
+  const committableTeamIds = new Set(
+    rows
+      .filter((r) => sheetOf(r) === 'teams' && r.status !== 'ERROR')
+      .map((r) => toStr(r.raw.team_id))
+      .filter((id) => id !== ''),
+  );
+
+  const survivorsByTeam = new Map<string, ValidatedImportRow[]>();
+  for (const row of rows) {
+    // ERROR rows are never written; WARNING rows here are orphans, already undeliverable.
+    if (sheetOf(row) !== 'depthchart' || row.status !== 'OK') continue;
+    const teamId = toStr(row.raw.team_id);
+    if (!committableTeamIds.has(teamId)) continue;
+    const list = survivorsByTeam.get(teamId) ?? [];
+    list.push(row);
+    survivorsByTeam.set(teamId, list);
+  }
+
+  for (const [teamId, survivors] of survivorsByTeam.entries()) {
+    const covered = new Set(survivors.map((r) => toStr(r.raw.position).toUpperCase()));
+    const missing = REQUIRED_STARTING_POSITIONS.filter((p) => !covered.has(p));
+    if (missing.length === 0) continue;
+
+    for (const row of survivors) {
+      row.status = 'WARNING';
+      row.messages.push(
+        `depth chart for team_id "${teamId}" is missing required position(s): ${missing.join(', ')} — this imported chart will not be used; a depth chart will be auto-generated instead`,
+      );
+    }
+  }
 }
 
 function markOrphan(row: ValidatedImportRow, message: string): void {

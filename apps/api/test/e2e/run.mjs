@@ -287,12 +287,20 @@ async function main() {
     { entries: importedChart.body?.entries?.length, legal: importedChart.body?.legal });
 
   // -------------------------------------------------------------------
-  section('Incomplete depth chart — rows stay OK but are counted as skipped, not created');
+  section('Incomplete depth chart — rows are WARNING, skipped, and chart is auto-generated');
   // -------------------------------------------------------------------
   const incDc = await uploadAndCommit(USER_A, 'incomplete-depthchart.csv', 'incomplete depth chart');
   const incDcRows = incDc.preview.body.rows.filter((r) => r.sheet === 'depthchart');
-  ok('incomplete-chart rows are individually valid (status OK, not WARNING)',
-    incDcRows.length === 5 && incDcRows.every((r) => r.status === 'OK'), incDcRows.map((r) => r.status));
+  // References all resolve, so these are not orphans — but the chart cannot cover the
+  // required lineup, so commit discards it. The user is told, rather than silently losing
+  // the chart they hand-built.
+  ok('incomplete-chart rows are WARNING, not silently OK',
+    incDcRows.length === 5 && incDcRows.every((r) => r.status === 'WARNING'), incDcRows.map((r) => r.status));
+  ok('the WARNING names the missing required positions and the auto-generation fallback',
+    /missing required position\(s\):/.test(incDcRows[0]?.messages?.[0] ?? '') &&
+      /auto-generated instead/.test(incDcRows[0]?.messages?.[0] ?? ''), incDcRows[0]?.messages);
+  ok('the incomplete-chart WARNING is not an orphan message',
+    !/does not match any/.test(incDcRows[0]?.messages?.[0] ?? ''), incDcRows[0]?.messages);
 
   ok('commit succeeds', incDc.commit.status === 200, incDc.commit.body);
   const incSummary = incDc.commit.body.summary;
@@ -322,9 +330,18 @@ async function main() {
   const phantom = await uploadAndCommit(USER_A, 'depthchart-phantom-qb.csv', 'phantom QB');
   const phantomDc = phantom.preview.body.rows.filter((r) => r.sheet === 'depthchart');
   const phantomQbRow = phantomDc.find((r) => r.data?.player_id === 'T1-P99');
-  ok('the row referencing a nonexistent player is WARNING', phantomQbRow?.status === 'WARNING', phantomQbRow);
-  ok('the other 19 depth-chart rows are individually OK',
-    phantomDc.filter((r) => r.status === 'OK').length === 19, phantomDc.map((r) => r.status));
+  ok('the row referencing a nonexistent player is WARNING (orphan)',
+    phantomQbRow?.status === 'WARNING' && /player_id "T1-P99"/.test(phantomQbRow?.messages?.[0] ?? ''),
+    phantomQbRow);
+  // Dropping the orphaned QB row leaves the chart without a QB, so the surviving 19 rows
+  // are discarded too — and now say so, naming QB as the missing position.
+  const phantomSurvivors = phantomDc.filter((r) => r !== phantomQbRow);
+  ok('the other 19 rows are WARNING because the chart loses its QB',
+    phantomSurvivors.length === 19 && phantomSurvivors.every((r) => r.status === 'WARNING'),
+    phantomSurvivors.map((r) => r.status));
+  ok('their WARNING names QB as the missing required position',
+    phantomSurvivors.every((r) => /missing required position\(s\): QB/.test(r.messages?.[0] ?? '')),
+    phantomSurvivors[0]?.messages);
 
   ok('commit succeeds', phantom.commit.status === 200, phantom.commit.body);
   const ps = phantom.commit.body.summary;

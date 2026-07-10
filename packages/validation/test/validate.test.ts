@@ -226,13 +226,94 @@ test('depthchart row pointing at an ERROR player is WARNING (player never create
   assert.equal(rows[2].status, 'WARNING');
 });
 
-test('a fully-linked depthchart row is OK', () => {
+test('a fully-linked depthchart row is WARNING when it alone cannot complete the chart', () => {
   const rows = validateImportRows([
     { sheet: 'teams', rowIndex: 0, raw: validTeam },
     { sheet: 'players', rowIndex: 0, raw: validPlayer('t1') },
     { sheet: 'depthchart', rowIndex: 0, raw: { team_id: 't1', player_id: 'p1', position: 'QB', slot: 0 } },
   ]);
-  assert.ok(rows.every((r) => r.status === 'OK'));
+  // The references all resolve, so this is not an orphan — but a one-position chart cannot
+  // cover the required lineup, so commit discards it in favour of auto-generation.
+  assert.equal(rows[0].status, 'OK'); // teams
+  assert.equal(rows[1].status, 'OK'); // players
+  assert.equal(rows[2].status, 'WARNING');
+  assert.match(rows[2].messages[0], /missing required position\(s\)/);
+  assert.doesNotMatch(rows[2].messages[0], /does not match any/); // not an orphan
+});
+
+// --- Incomplete depth chart: rows are discarded at commit, so warn rather than drop silently ---
+
+const REQUIRED = [
+  'QB', 'RB', 'WR', 'TE', 'LT', 'LG', 'C', 'RG', 'RT', 'LE',
+  'RE', 'DT', 'LOLB', 'MLB', 'ROLB', 'CB', 'FS', 'SS', 'K', 'P',
+];
+
+const fullRoster = (teamId: string) => [
+  { sheet: 'teams', rowIndex: 0, raw: { team_id: teamId, team_name: 'Coyotes' } },
+  ...REQUIRED.map((pos, i) => ({
+    sheet: 'players', rowIndex: i,
+    raw: {
+      player_id: `p${i}`, team_id: teamId, first_name: 'A', last_name: `B${i}`,
+      position: pos, jersey_number: i + 1, overall_rating: 70,
+    },
+  })),
+];
+
+test('a complete imported depth chart leaves every row OK', () => {
+  const rows = validateImportRows([
+    ...fullRoster('t1'),
+    ...REQUIRED.map((pos, i) => ({
+      sheet: 'depthchart', rowIndex: i,
+      raw: { team_id: 't1', player_id: `p${i}`, position: pos, slot: 0 },
+    })),
+  ]);
+  assert.ok(rows.filter((r) => r.sheet === 'depthchart').every((r) => r.status === 'OK'));
+});
+
+test('an incomplete chart marks its rows WARNING and names the missing positions', () => {
+  const rows = validateImportRows([
+    ...fullRoster('t1'),
+    // Only the first 3 required positions are charted.
+    ...REQUIRED.slice(0, 3).map((pos, i) => ({
+      sheet: 'depthchart', rowIndex: i,
+      raw: { team_id: 't1', player_id: `p${i}`, position: pos, slot: 0 },
+    })),
+  ]);
+  const dc = rows.filter((r) => r.sheet === 'depthchart');
+  assert.equal(dc.length, 3);
+  assert.ok(dc.every((r) => r.status === 'WARNING'));
+  assert.match(dc[0].messages[0], /missing required position\(s\): TE, LT/);
+  assert.match(dc[0].messages[0], /will be auto-generated instead/);
+});
+
+test('a chart complete only thanks to an orphaned row is still incomplete (chained)', () => {
+  const rows = validateImportRows([
+    ...fullRoster('t1'),
+    // All 20 positions charted, but the QB row references a player that does not exist.
+    ...REQUIRED.map((pos, i) => ({
+      sheet: 'depthchart', rowIndex: i,
+      raw: { team_id: 't1', player_id: pos === 'QB' ? 'p-missing' : `p${i}`, position: pos, slot: 0 },
+    })),
+  ]);
+  const dc = rows.filter((r) => r.sheet === 'depthchart');
+  const orphanRow = dc.find((r) => r.raw.position === 'QB')!;
+  const survivors = dc.filter((r) => r !== orphanRow);
+
+  assert.equal(orphanRow.status, 'WARNING');
+  assert.match(orphanRow.messages[0], /player_id "p-missing"/);
+  assert.ok(survivors.every((r) => r.status === 'WARNING'));
+  assert.match(survivors[0].messages[0], /missing required position\(s\): QB\b/);
+});
+
+test('rows for a missing team get only the orphan message, not an incompleteness message', () => {
+  const rows = validateImportRows([
+    ...fullRoster('t1'),
+    { sheet: 'depthchart', rowIndex: 0, raw: { team_id: 't-missing', player_id: 'p0', position: 'QB', slot: 0 } },
+  ]);
+  const dc = rows.find((r) => r.sheet === 'depthchart')!;
+  assert.equal(dc.status, 'WARNING');
+  assert.equal(dc.messages.length, 1);
+  assert.match(dc.messages[0], /does not match any team in this import/);
 });
 
 test('depthchart orphaned by BOTH team and player names the team (root cause) once', () => {

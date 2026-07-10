@@ -161,9 +161,8 @@ extends the identical rule to Coaches and DepthChart.*
     ERROR — is WARNING, because that entry cannot be written either;
     (d) when a DepthChart row is orphaned by both its team and its player, the message
     names the team, since that is the root cause;
-    (e) a DepthChart row dropped only because its team's chart is incomplete remains OK
-    (see Open Questions #8c) — that is auto-generation fallback, not a broken reference —
-    but it is still counted as `skipped`, because it was not written.
+    (e) a DepthChart row dropped only because its team's chart is incomplete is WARNING
+    (see AC18) and counted as `skipped`, because it was not written.
 16. The summary's four counts are expressed in one unit: **entity rows**. Every entity row
     falls in exactly one of `created` (written), `skipped` (valid but not written) or
     `failed` (ERROR), so `created + skipped + failed` equals the entity row count. In
@@ -177,6 +176,15 @@ extends the identical rule to Coaches and DepthChart.*
     for that team; all of its DepthChart rows are `skipped` and the team falls back to
     auto-generation. A partial chart missing a required starting position is never written:
     it would be immediately regenerated on first read, so persisting it is a lie.
+18. Given a Teams row that will be committed, and DepthChart rows for it whose references
+    all resolve but which do not cover every required starting position, when I preview the
+    import, then those rows are flagged WARNING with a message naming the missing
+    position(s) and stating the chart will not be used and one will be auto-generated
+    instead. Discarding a hand-built depth chart is intended behaviour, but doing it
+    silently is not: the user is told which positions to add. Rows whose team is missing
+    entirely carry only the orphan message (AC15(b)), which is the truer root cause.
+    Completeness is assessed after orphaned rows are removed, per AC17, so a chart that
+    only looks complete because of an undeliverable row is still reported as incomplete.
 
 **Story 2 — Set up a game**
 As a user, I want to pick two of my imported teams and quickly configure a game so I can
@@ -360,9 +368,10 @@ the following assumptions are recorded rather than blocking:
    actually land (auto-creating a placeholder Team is a data-model decision Product has not
    asked for); (b) range checks on optional secondary attributes (`speed`, `aggression`, …),
    which are nullable, unconstrained, and unread by the Cap-1 engine — flagging them would
-   be noise, not signal; (c) reclassifying the *incomplete depth chart* case, where a team's
-   rows are dropped because the chart lacks a required starting position. That is the
-   intentional fall back to auto-generation (architecture.md §5), not a failed reference,
-   so those rows keep status OK and are never flagged WARNING. They are, however, counted
-   as `skipped` in the summary (AC16), since they are not written — status and summary
-   bucket are deliberately different concepts.
+   be noise, not signal. *(Revised: the third exclusion — the incomplete depth chart — was
+   reversed. Dropping the chart is still the intentional fall back to auto-generation per
+   architecture.md §5, and still not a failed reference, but doing it without telling the
+   user meant a hand-built chart vanished silently. Those rows are now WARNING and name the
+   missing positions; see AC18. They remain `skipped`, not `failed`.)* Note that status and
+   summary bucket stay distinct concepts: bucketing is decided by
+   `classifyDepthChartRows`, not by row status, so the counts in AC16 are unaffected.
