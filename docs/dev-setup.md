@@ -115,10 +115,35 @@ CI round trip on it. Branch protection is what actually protects `main`.
 The protection and ruleset APIs returned 403, and `PATCH allow_auto_merge=true` returned
 200 while silently leaving the value `false`. Making the repo public unlocked all three.)*
 
+## Running apps/web in a container
+
+The default stack (`docker compose up -d postgres redis`) never builds an image. The `web`
+service is behind a profile:
+
+```sh
+docker compose --profile web up --build web   # http://localhost:3000
+```
+
+`apps/api` still runs on the host (`npm run start:dev`), and the web container reaches it in
+**two different ways**, which is the one subtlety here:
+
+| Caller | Env var | Value | Why |
+|---|---|---|---|
+| Browser | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Inlined into the client bundle at *build* time; the browser runs on the host. |
+| Server Components | `API_URL` | `http://host.docker.internal:3001` | Read at *runtime*. Inside the container `localhost` is the container, not the host. |
+
+`apps/web/src/app/imports/page.tsx` and `games/[id]/box-score/page.tsx` are Server
+Components that fetch the API, so without the `API_URL` split they would 500 inside a
+container while the client-rendered pages kept working. `API_URL` is deliberately not
+`NEXT_PUBLIC_*` — a container-internal hostname must never be baked into a client bundle.
+
+Both default to `localhost:3001`, so running everything on the host needs no env at all.
+
 ## Follow-ups (not in this Capability-1 slice)
-- `apps/web` service definition in `docker-compose.yml`. (`apps/worker` is scaffolded but
-  intentionally idle — nothing enqueues in Capability 1.)
-- An `apps/api` Dockerfile, if/when the API needs to run containerized rather than on the host.
+- An `apps/api` Dockerfile, if/when the API needs to run containerized rather than on the
+  host. At that point the `web` service's `API_URL` becomes `http://api:3001` over compose
+  DNS, and the `extra_hosts` mapping can go.
+- (`apps/worker` is scaffolded but intentionally idle — nothing enqueues in Capability 1.)
 - Storage bucket setup (Supabase Storage/S3-compatible) — not needed for Capability 1 since
   uploaded roster files are parsed in-memory and not required to be retained
   (`company-docs/architecture.md` §8).

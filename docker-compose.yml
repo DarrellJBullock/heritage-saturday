@@ -1,7 +1,13 @@
 # Heritage Saturday — local development infrastructure
 # Scope: Capability 1 (roster import + basic game simulation) per company-docs/architecture.md.
-# apps/worker and apps/web are not scaffolded yet, so no worker/web/api services are defined
-# here yet — see docs/dev-setup.md for the plan to add them.
+#
+# `docker compose up -d postgres redis` is the default dev stack and must never require a
+# build. The `web` service is therefore behind a profile:
+#
+#   docker compose --profile web up --build web
+#
+# apps/api still runs on the host (`npm run start:dev`), so there is no `api` service —
+# an apps/api Dockerfile is a separate follow-up, see docs/dev-setup.md.
 #
 # Cloud provider / IaC: none — this is local-only Docker Compose, not a cloud deployment.
 
@@ -44,11 +50,37 @@ services:
       retries: 10
       start_period: 5s
 
+  web:
+    # Behind a profile: `docker compose up -d postgres redis` must not try to build an image.
+    profiles: ["web"]
+    build:
+      # Repo root, not apps/web — this is an npm-workspaces monorepo and the build needs
+      # packages/shared plus the hoisted root node_modules.
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the client bundle at build time. This is the address the BROWSER
+        # uses, so it is the host's published API port, not a container hostname.
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+        NEXT_PUBLIC_DEV_USER_ID: dev-user-1
+    container_name: heritage-saturday-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Server-side fetches only (Server Components). Inside this container `localhost`
+      # is the container, not the host — so SSR must reach the host-run API explicitly.
+      # See apps/web/src/lib/config.ts.
+      API_URL: http://host.docker.internal:3001
+    extra_hosts:
+      # Docker Desktop provides host.docker.internal; on Linux this mapping creates it.
+      - "host.docker.internal:host-gateway"
+
   # NOTE: apps/api does not yet have a Dockerfile (it currently runs via `nest start` on the
   # host, against this compose stack's postgres/redis over localhost ports). An `api` service
-  # is intentionally NOT defined yet so `docker compose up postgres redis` never fails due to
-  # a missing build context. Add it here (with a `build: { context: ., dockerfile: apps/api/Dockerfile }`)
-  # once a Dockerfile exists and apps/worker/apps/web are scaffolded — see docs/dev-setup.md.
+  # is intentionally NOT defined yet. Add it here (with a
+  # `build: { context: ., dockerfile: apps/api/Dockerfile }`) once a Dockerfile exists —
+  # see docs/dev-setup.md. At that point `web`'s API_URL becomes `http://api:3001`.
 
 volumes:
   heritage_saturday_postgres_data:
