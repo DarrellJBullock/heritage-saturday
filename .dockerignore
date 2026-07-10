@@ -1,0 +1,26 @@
+# Build context is the repo root. Without these, `COPY packages ./packages` and
+# `COPY apps/web ./apps/web` would drag the host's node_modules and build output into
+# the image — slow, and host-arch binaries would shadow the ones `npm ci` installs.
+node_modules
+**/node_modules
+
+dist
+**/dist
+dist-test
+**/dist-test
+.next
+**/.next
+*.tsbuildinfo
+
+.git
+.github
+.githooks
+
+# Secrets must never enter a build context; .env.example files are fine and are copied
+# only if a Dockerfile asks for them.
+.env
+**/.env
+**/.env.local
+
+.DS_Store
+**/.DS_Store
