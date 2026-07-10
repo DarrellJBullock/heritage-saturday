@@ -53,10 +53,16 @@ npx prisma migrate status
 ```
 
 ## 5. Seed data
-**Not available yet.** No seed script exists in this capability slice — this is a known
-follow-up (see vision.md's DevOps section, which calls for a seed script as part of the full
-stack). Once one exists (likely `apps/api/prisma/seed.ts` wired via Prisma's `seed` config),
-document the command here and add a `db:seed` convenience target to the Makefile.
+```bash
+make db-seed          # or, from apps/api: npx prisma db seed
+```
+This creates three users whose ids are **contract, not sample data**: `dev-user-1` is the
+account the password-less dev login signs in as (see [Signing in](#signing-in)), and
+`qa-user-a` / `qa-user-b` are what the e2e suite uses to prove that one user cannot read
+another's rosters. Renaming them breaks both.
+
+They deliberately have no `authProvider` / `authSubject`, so none of them can be reached by a
+real Google sign-in — a fixture that could be signed into as a stranger would be a backdoor.
 
 ## 6. Run the API
 ```bash
@@ -141,16 +147,54 @@ paired with the secret, and a container-internal hostname must never reach a cli
 
 ### Locking the API
 
-The API trusts an `x-user-id` header (`AuthStubMiddleware`), so any caller can claim any
-identity. That is fine on localhost and unacceptable on a reachable host. `ApiKeyMiddleware`
-gates the API behind `API_SHARED_SECRET`, and with `NODE_ENV=production` the API **refuses to
-boot** without it — a forgotten env var must not silently publish an open API. Set
-`ALLOW_INSECURE_NO_API_KEY=true` to override deliberately; the local `api` compose service
-does, since it is only reachable on a private network. CI does not — it runs both containers
-with a real secret, so the gate is exercised the way it ships.
+The API still trusts an `x-user-id` header (`TrustedProxyUserMiddleware`) — but that header is
+now an assertion from an authenticated peer rather than a caller-chosen value, because
+`ApiKeyMiddleware` runs first and rejects anyone without `API_SHARED_SECRET`. Only `apps/web`
+holds that secret, and the browser never talks to the API directly. That is the
+backend-for-frontend split: **apps/web authenticates the user, the secret authenticates
+apps/web.** Remove the secret and anyone can send `x-user-id: <victim>`.
+
+With `NODE_ENV=production` the API **refuses to boot** without the secret — a forgotten env
+var must not silently publish an open API. Set `ALLOW_INSECURE_NO_API_KEY=true` to override
+deliberately; the local `api` compose service does, since it is only reachable on a private
+network. CI does not — it runs both containers with a real secret, so the gate is exercised
+the way it ships.
 
 When the secret is set, give `apps/web` the same value so its proxy and Server Components can
 present it. Local development leaves it unset entirely and the API logs a warning instead.
+
+## Signing in
+
+`apps/web` owns the user session (Auth.js, JWT cookie, Google OIDC). It resolves a provider
+identity to an internal `User.id` once at sign-in by calling `POST /auth/session` on the API —
+the one route without an `x-user-id`, since it is what establishes one. Accounts are keyed on
+Google's stable `sub` claim, never the email, which users can change.
+
+```bash
+cd apps/web
+cp .env.example .env.local
+```
+
+`AUTH_SECRET` is required (`openssl rand -base64 32`); Auth.js will not start without it.
+Rotating it signs everyone out.
+
+**Without Google credentials**, `ALLOW_DEV_LOGIN=true` adds a password-less "sign in as
+`dev-user-1`" button, so the app is usable immediately after `make db-seed`. It is registered
+only when `NODE_ENV` is not `production`, and apps/web **refuses to boot** if you set it
+alongside `NODE_ENV=production` — a bypass must fail loudly rather than silently do nothing.
+The `web` container therefore can never enable it; use `npm run dev` on the host.
+
+**With Google**, create an OAuth client at
+[console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)
+and set `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`. The authorized redirect URI must be exactly:
+
+```
+http://localhost:3000/api/auth/callback/google
+```
+
+Signing in with a Google account whose email already belongs to another user (the seeded
+fixtures, typically) returns **409** rather than adopting that account: silently linking on a
+matching email is an account-takeover vector when the email is unverified.
 
 ## Running apps/api in a container
 

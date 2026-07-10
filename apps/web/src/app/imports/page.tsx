@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { apiClient, ApiError } from '@/lib/api-client';
+import { ApiError } from '@/lib/api-client';
+import { serverApiClient } from '@/lib/api-client.server';
 import type { ImportHistoryItemDto } from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +17,7 @@ export default async function ImportsHistoryPage() {
   let loadError: string | null = null;
 
   try {
-    imports = await apiClient.get<ImportHistoryItemDto[]>('/imports');
+    imports = await serverApiClient.get<ImportHistoryItemDto[]>('/imports');
   } catch (err) {
     loadError = err instanceof ApiError ? err.message : 'Failed to load import history.';
   }

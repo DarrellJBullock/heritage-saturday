@@ -30,12 +30,10 @@ COPY apps/web ./apps/web
 # The root build script enforces dependency order; here only shared is needed.
 RUN npm run build -w @heritage-saturday/shared
 
-# NEXT_PUBLIC_* is inlined into the client bundle at BUILD time, not read at runtime.
-# There is deliberately no NEXT_PUBLIC_API_URL: the browser calls this app's own
-# /api/proxy/* route on the same origin, so the API address never leaves the server.
-ARG NEXT_PUBLIC_DEV_USER_ID=dev-user-1
-ENV NEXT_PUBLIC_DEV_USER_ID=$NEXT_PUBLIC_DEV_USER_ID
-
+# No NEXT_PUBLIC_* is needed. The browser calls this app's own /api/proxy/* route on the same
+# origin, so the API address never leaves the server, and identity comes from the session
+# rather than a baked-in user id. Nothing here should ever be a secret: NEXT_PUBLIC_* values
+# are inlined into the client bundle at BUILD time.
 RUN npm run build -w @heritage-saturday/web
 
 # ---- runtime -----------------------------------------------------------------
@@ -58,6 +56,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 USER nextjs
 EXPOSE 3000
 
-# API_URL and API_SHARED_SECRET (both server-side only) are injected at runtime by
-# docker-compose; see apps/web/src/lib/config.ts for why neither is NEXT_PUBLIC_*.
+# API_URL, API_SHARED_SECRET and AUTH_SECRET (all server-side only) are injected at runtime by
+# docker-compose; see apps/web/src/lib/config.ts for why none of them is NEXT_PUBLIC_*.
+#
+# NODE_ENV=production above also means this image can never enable ALLOW_DEV_LOGIN: apps/web
+# refuses to boot with both set (see src/auth.ts).
 CMD ["node", "apps/web/server.js"]

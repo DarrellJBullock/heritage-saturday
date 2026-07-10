@@ -36,16 +36,10 @@ export const API_BASE_URL = IS_SERVER
 export const API_SHARED_SECRET = IS_SERVER ? process.env.API_SHARED_SECRET : undefined;
 
 /**
- * AUTH SEAM — NOT real auth.
+ * Identity is no longer a constant.
  *
- * apps/api's AuthStubMiddleware trusts an `x-user-id` request header to
- * resolve `req.user.id` (see apps/api/src/common/auth/auth-stub.middleware.ts).
- * There is no login flow yet, so we hardcode/select a dev user id here and
- * attach it to every request in `apiClient` below.
- *
- * TODO(platform-auth): once real session/JWT auth exists, replace this
- * constant with the authenticated user's id (e.g. from a session hook) —
- * `apiClient` already reads it from one place, so no other file changes.
+ * apps/web owns the user session (see src/auth.ts) and asserts the signed-in user's id to the
+ * API via `x-user-id`, which apps/api trusts because only a caller holding API_SHARED_SECRET
+ * can set it. Server-side callers read the session directly (lib/api-client.server.ts); browser
+ * callers never send an identity at all, because /api/proxy attaches it for them.
  */
-export const DEV_USER_ID =
-  process.env.NEXT_PUBLIC_DEV_USER_ID ?? 'dev-user-1';

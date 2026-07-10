@@ -1,5 +1,5 @@
 import type { ApiErrorShape, DomainErrorCode } from '@heritage-saturday/shared';
-import { API_BASE_URL, API_SHARED_SECRET, DEV_USER_ID, IS_SERVER } from './config';
+import { API_BASE_URL } from './config';
 
 /**
  * Typed error thrown by `apiClient` for any non-2xx response. Wraps the
@@ -32,7 +32,7 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions {
+export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: BodyInit;
   headers?: Record<string, string>;
@@ -40,17 +40,16 @@ interface RequestOptions {
   isFormData?: boolean;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = {
-    'x-user-id': DEV_USER_ID,
-    ...options.headers,
-  };
-  // Server-side callers talk to the API directly, so they must present the shared secret.
-  // Browser callers go through /api/proxy, which attaches it — the secret never ships to a
-  // client bundle. IS_SERVER is the guard that keeps it that way.
-  if (IS_SERVER && API_SHARED_SECRET) {
-    headers['x-api-key'] = API_SHARED_SECRET;
-  }
+/**
+ * Sends no identity and no secret of its own.
+ *
+ * In the browser `API_BASE_URL` is `/api/proxy`, and that route attaches both `x-api-key` and
+ * the session's `x-user-id` server-side — a client-sent `x-user-id` would be overwritten
+ * anyway, so sending one would only imply it mattered. Server-side callers must supply both
+ * via `options.headers`; use `lib/api-client.server.ts`, which does it from the session.
+ */
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const headers: Record<string, string> = { ...options.headers };
   if (!options.isFormData && options.body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }

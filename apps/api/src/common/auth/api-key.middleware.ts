@@ -19,25 +19,24 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Shared-secret gate in front of AuthStubMiddleware.
+ * Service-to-service authentication for the only client this API has: apps/web.
  *
- * The stub trusts an `x-user-id` header, which means the *caller* chooses their identity.
- * That is fine on localhost and catastrophic on a public URL: anyone could send
- * `x-user-id: dev-user-1` and read or delete another user's rosters. The ownership guards
- * are only meaningful if the header cannot be forged.
+ * This authenticates the *caller*, not the user. User authentication lives in apps/web
+ * (Auth.js, Google OIDC), which then asserts who the user is via `x-user-id` — read
+ * TrustedProxyUserMiddleware, which runs immediately after this. That backend-for-frontend
+ * split is why the header can be trusted: only a caller holding `API_SHARED_SECRET` can set
+ * it, and the browser never talks to this API directly, so the secret never reaches a client
+ * bundle.
  *
- * Until real auth lands, a public deployment must be reachable only by something that
- * knows `API_SHARED_SECRET`. In practice that is apps/web's server-side proxy — the browser
- * never talks to this API directly, so the secret never reaches a client bundle.
+ * This middleware is therefore load-bearing, not a stopgap. Every ownership check in the app
+ * ultimately depends on it: remove it and anyone can send `x-user-id: <victim>` and read or
+ * delete that user's rosters.
  *
  * FAIL CLOSED: in production, a missing secret is a boot error, not a warning. A forgotten
  * environment variable must not silently publish an open API. Set
  * ALLOW_INSECURE_NO_API_KEY=true to opt out deliberately — the local docker-compose `api`
  * service does, since it is only reachable on a private network. CI does NOT: it runs the
  * containers with a real secret so this gate is exercised the way it ships.
- *
- * TODO(platform-auth): delete this once real session/JWT auth replaces the stub. It is a
- * deployment lock, not an identity system — it authenticates the caller, not the user.
  */
 export function assertApiKeyConfig(): void {
   const secret = process.env.API_SHARED_SECRET;

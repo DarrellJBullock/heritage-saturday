@@ -1,7 +1,7 @@
 import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { TeamsService } from './teams.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';
-import { RequestUser } from '../common/auth/auth-stub.middleware';
+import { RequestUser } from '../common/auth/trusted-proxy-user.middleware';
 import { TeamOwnershipGuard } from '../common/guards/ownership.guards';
 
 @Controller('teams')
