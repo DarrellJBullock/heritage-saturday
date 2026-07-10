@@ -91,6 +91,113 @@ function addStat(
   }
 }
 
+/** Receivers eligible to catch a pass, in depth order. Deliberately narrow (two
+ * wideouts) to match Cap-1 scope; TE and RB are fallbacks only, so that a roster
+ * without wideouts can still have its passing yards charged to somebody. */
+function eligibleReceivers(team: SimInputTeam): SimPlayer[] {
+  const wrs = playersAtPosition(team, 'WR').slice(0, 2);
+  if (wrs.length > 0) return wrs;
+  const tes = playersAtPosition(team, 'TE').slice(0, 1);
+  if (tes.length > 0) return tes;
+  return playersAtPosition(team, 'RB').slice(0, 1);
+}
+
+/** Split drive yardage by the archetype's pass ratio, collapsing onto whichever
+ * phase the roster can actually run: a team with no QB (or nobody to throw to)
+ * gains on the ground, and vice versa. Guarantees passYards + rushYards === the
+ * yards the team is credited with, so every yard can be charged to a player. */
+function splitDriveYards(
+  total: number,
+  passRatio: number,
+  canPass: boolean,
+  canRush: boolean,
+): { passYards: number; rushYards: number } {
+  if (canPass && canRush) {
+    const passYards = Math.round(total * passRatio);
+    return { passYards, rushYards: total - passYards };
+  }
+  if (canPass) return { passYards: total, rushYards: 0 };
+  if (canRush) return { passYards: 0, rushYards: total };
+  return { passYards: 0, rushYards: 0 };
+}
+
+/**
+ * Credit one drive's passing production — the single place receptions are created.
+ *
+ * Every completion becomes a reception and the drive's pass yards are distributed
+ * across receivers exactly, so that over a game `sum(receptions) === completions`
+ * and `sum(receivingYards) === passYards`. Attribution used to live inside each
+ * drive-outcome branch, where only the touchdown branch ever wrote a reception —
+ * making `receptions === receivingTDs` an identity (every catch a TD) and dropping
+ * the yardage from every non-scoring drive entirely.
+ */
+function creditPassing(
+  acc: StatAccumulator,
+  rng: Rng,
+  teamId: string,
+  qb: SimPlayer,
+  receivers: SimPlayer[],
+  passYards: number,
+  isTd: boolean,
+  attemptsMin: number,
+  attemptsMax: number,
+  completionRate: number,
+): void {
+  const attempts = rngInt(rng, attemptsMin, attemptsMax);
+  const completions = clamp(Math.round(attempts * completionRate), 1, attempts);
+
+  addStat(acc, qb.id, teamId, {
+    passAttempts: attempts,
+    passCompletions: completions,
+    passYards,
+    ...(isTd ? { passTDs: 1 } : {}),
+  });
+
+  const catches = new Array<number>(receivers.length).fill(0);
+  for (let i = 0; i < completions; i++) catches[rngInt(rng, 0, receivers.length - 1)] += 1;
+
+  // Indices that actually caught something; non-empty because completions >= 1.
+  const caught = catches.map((_, i) => i).filter((i) => catches[i] > 0);
+  // The last catcher absorbs the rounding remainder, so the yards sum is exact.
+  const remainderIdx = caught[caught.length - 1];
+
+  let assigned = 0;
+  for (const i of caught) {
+    const yards =
+      i === remainderIdx ? passYards - assigned : Math.floor((passYards * catches[i]) / completions);
+    if (i !== remainderIdx) assigned += yards;
+    addStat(acc, receivers[i].id, teamId, {
+      targets: catches[i] + rngInt(rng, 0, 1),
+      receptions: catches[i],
+      receivingYards: yards,
+    });
+  }
+
+  if (isTd) {
+    const scorer = caught[rngInt(rng, 0, caught.length - 1)];
+    addStat(acc, receivers[scorer].id, teamId, { receivingTDs: 1 });
+  }
+}
+
+/** Credit one drive's rushing production. Called on every drive with rush yardage,
+ * not just the ones that end in a rushing touchdown. */
+function creditRushing(
+  acc: StatAccumulator,
+  rng: Rng,
+  teamId: string,
+  rb: SimPlayer,
+  rushYards: number,
+  isTd: boolean,
+  carriesMin: number,
+  carriesMax: number,
+): void {
+  addStat(acc, rb.id, teamId, {
+    carries: rngInt(rng, carriesMin, carriesMax),
+    rushYards,
+    ...(isTd ? { rushTDs: 1 } : {}),
+  });
+}
+
 type DriveOutcome = 'TD' | 'FG' | 'PUNT' | 'TURNOVER' | 'MISSED_FG';
 
 interface DriveResult {
@@ -123,37 +230,46 @@ function simulatePossession(
     0.35,
   );
 
-  const qb = getStarter(offense, 'QB');
-  const rb = getStarter(offense, 'RB') ?? getStarter(offense, 'FB');
-  const wrs = playersAtPosition(offense, 'WR').slice(0, 2);
+  const receivers = eligibleReceivers(offense);
   const kicker = getStarter(offense, 'K');
+  const rusher = getStarter(offense, 'RB') ?? getStarter(offense, 'FB');
+
+  // A pass needs both a thrower and someone to throw to; without either, the drive's
+  // yardage is rushed instead. Narrowing to `SimPlayer | null` here lets every call
+  // site below stay type-safe without non-null assertions.
+  const passer = receivers.length > 0 ? getStarter(offense, 'QB') : null;
+  const canPass = passer !== null;
+  const canRush = rusher !== null;
   const defFront = playersAtPosition(defense, 'MLB').concat(playersAtPosition(defense, 'LOLB'), playersAtPosition(defense, 'ROLB'));
   const defBack = playersAtPosition(defense, 'CB').concat(playersAtPosition(defense, 'FS'), playersAtPosition(defense, 'SS'));
 
   const baseYards = rngInt(rng, 20, 70) * (1 + ratingDiffNorm * 0.25) * (1 + (offConfig.aggression - 0.5) * 0.3);
-  const yards = Math.max(0, Math.round(baseYards));
+  const grossYards = Math.max(0, Math.round(baseYards));
   const passRatio = clamp(offConfig.passRatio + (rng() - 0.5) * 0.1, 0.15, 0.85);
-  const passYards = Math.round(yards * passRatio);
-  const rushYards = yards - passYards;
+  const { passYards, rushYards } = splitDriveYards(grossYards, passRatio, canPass, canRush);
+  const yards = passYards + rushYards;
 
   if (rng() < turnoverProb) {
-    // Turnover: partial yards gained before the takeaway, no points.
-    const partialYards = Math.round(yards * 0.4);
-    const partialPass = Math.round(partialYards * passRatio);
-    const partialRush = partialYards - partialPass;
+    // Turnover: partial yards gained before the takeaway, no points. Both phases are
+    // credited — the drive's passing and rushing yards both really happened, and the
+    // team totals count both regardless of which one ended the drive.
+    const partial = splitDriveYards(Math.round(yards * 0.4), passRatio, canPass, canRush);
 
-    if (qb && partialPass > 0) {
-      addStat(acc, qb.id, offense.teamId, { passAttempts: rngInt(rng, 2, 5), passCompletions: 1, passYards: partialPass });
-      if (rng() < 0.6) {
-        // Interception credited to a defensive back.
-        addStat(acc, qb.id, offense.teamId, { interceptions: 1 });
-        if (defBack.length > 0) {
-          const defender = defBack[rngInt(rng, 0, defBack.length - 1)];
-          addStat(acc, defender.id, defense.teamId, { defInterceptions: 1 });
-        }
+    if (passer && partial.passYards > 0) {
+      creditPassing(acc, rng, offense.teamId, passer, receivers, partial.passYards, false, 2, 5, 0.55);
+    }
+    if (rusher && partial.rushYards > 0) {
+      creditRushing(acc, rng, offense.teamId, rusher, partial.rushYards, false, 1, 3);
+    }
+
+    // Only a thrown ball can be intercepted; otherwise the takeaway is a fumble,
+    // which Cap-1 does not track as a player stat.
+    if (passer && rng() < 0.6) {
+      addStat(acc, passer.id, offense.teamId, { interceptions: 1 });
+      if (defBack.length > 0) {
+        const defender = defBack[rngInt(rng, 0, defBack.length - 1)];
+        addStat(acc, defender.id, defense.teamId, { defInterceptions: 1 });
       }
-    } else if (rb && partialRush > 0) {
-      addStat(acc, rb.id, offense.teamId, { carries: rngInt(rng, 1, 3), rushYards: partialRush });
     }
     if (defFront.length > 0 && rng() < 0.3) {
       const defender = defFront[rngInt(rng, 0, defFront.length - 1)];
@@ -163,9 +279,9 @@ function simulatePossession(
     return {
       outcome: 'TURNOVER',
       points: 0,
-      yards: partialYards,
-      passYards: partialPass,
-      rushYards: partialRush,
+      yards: partial.passYards + partial.rushYards,
+      passYards: partial.passYards,
+      rushYards: partial.rushYards,
       possessionSeconds,
     };
   }
@@ -176,35 +292,21 @@ function simulatePossession(
     0.75,
   );
 
-  const isPassTd = rng() < passRatio;
+  const passTdRoll = rng() < passRatio;
 
   if (rng() < scoreProb) {
     const isTd = rng() < 0.65 || !kicker;
 
     if (isTd) {
-      if (isPassTd && qb) {
-        const attempts = rngInt(rng, 3, 7);
-        addStat(acc, qb.id, offense.teamId, {
-          passAttempts: attempts,
-          passCompletions: Math.max(1, Math.round(attempts * 0.6)),
-          passYards,
-          passTDs: 1,
-        });
-        if (wrs.length > 0) {
-          const receiver = wrs[rngInt(rng, 0, wrs.length - 1)];
-          addStat(acc, receiver.id, offense.teamId, {
-            targets: rngInt(rng, 1, 3),
-            receptions: 1,
-            receivingYards: passYards,
-            receivingTDs: 1,
-          });
-        }
-      } else if (rb) {
-        addStat(acc, rb.id, offense.teamId, {
-          carries: rngInt(rng, 2, 6),
-          rushYards,
-          rushTDs: 1,
-        });
+      // The touchdown goes to whichever phase the roster can run; the *other* phase
+      // still gets its yards, because the drive gained them either way.
+      const isPassTd = canPass && (passTdRoll || !canRush);
+
+      if (passer && (passYards > 0 || isPassTd)) {
+        creditPassing(acc, rng, offense.teamId, passer, receivers, passYards, isPassTd, 3, 7, 0.6);
+      }
+      if (rusher && (rushYards > 0 || !isPassTd)) {
+        creditRushing(acc, rng, offense.teamId, rusher, rushYards, !isPassTd, 2, 6);
       }
 
       let points = 6;
@@ -220,8 +322,16 @@ function simulatePossession(
       return { outcome: 'TD', points, yards, passYards, rushYards, possessionSeconds };
     }
 
-    // Field goal attempt.
+    // Field goal attempt. The drive still moved the ball, so its yardage is credited
+    // to the skill players before the kick is resolved.
     if (kicker) {
+      if (passer && passYards > 0) {
+        creditPassing(acc, rng, offense.teamId, passer, receivers, passYards, false, 2, 5, 0.55);
+      }
+      if (rusher && rushYards > 0) {
+        creditRushing(acc, rng, offense.teamId, rusher, rushYards, false, 2, 5);
+      }
+
       const fgProb = clamp(0.5 + (kicker.kickAccuracy ?? 70) / 200, 0.35, 0.95);
       const made = rng() < fgProb;
       addStat(acc, kicker.id, offense.teamId, { fgAttempts: 1, fgMade: made ? 1 : 0 });
@@ -237,16 +347,11 @@ function simulatePossession(
   }
 
   // Punt: still credit yardage gained on the drive to the relevant skill players.
-  if (qb && passYards > 0) {
-    const attempts = rngInt(rng, 2, 5);
-    addStat(acc, qb.id, offense.teamId, {
-      passAttempts: attempts,
-      passCompletions: Math.max(1, Math.round(attempts * 0.55)),
-      passYards,
-    });
+  if (passer && passYards > 0) {
+    creditPassing(acc, rng, offense.teamId, passer, receivers, passYards, false, 2, 5, 0.55);
   }
-  if (rb && rushYards > 0) {
-    addStat(acc, rb.id, offense.teamId, { carries: rngInt(rng, 2, 5), rushYards });
+  if (rusher && rushYards > 0) {
+    creditRushing(acc, rng, offense.teamId, rusher, rushYards, false, 2, 5);
   }
 
   return { outcome: 'PUNT', points: 0, yards, passYards, rushYards, possessionSeconds };
