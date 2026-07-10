@@ -110,6 +110,17 @@ describe('ApiKeyMiddleware — reject callers without the secret', () => {
     assert.equal(call({ 'x-api-key': '' }), 401);
   });
 
+  it('rejects keys of any length with 401, never a crash', () => {
+    setEnv({ API_SHARED_SECRET: 's3cret' });
+    // The comparison is constant-time. node:crypto's timingSafeEqual throws on buffers of
+    // unequal size, so a length-mismatched guess must still come back as a clean 401 —
+    // a 500 here would mean the digest indirection was dropped.
+    assert.equal(call({ 'x-api-key': 's' }), 401);
+    assert.equal(call({ 'x-api-key': 's3cret-and-then-some' }), 401);
+    assert.equal(call({ 'x-api-key': 's3cre' }), 401); // prefix of the secret
+    assert.equal(call({ 'x-api-key': 'S3CRET' }), 401); // same length, wrong case
+  });
+
   it('rejects a forged identity that carries no key — the attack this exists to stop', () => {
     setEnv({ API_SHARED_SECRET: 's3cret' });
     assert.equal(call({ 'x-user-id': 'dev-user-1' }), 401);
