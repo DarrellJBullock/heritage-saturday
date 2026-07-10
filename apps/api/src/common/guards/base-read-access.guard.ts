@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
+import { LeagueRole } from '@heritage-saturday/shared';
 import { DomainException } from '../errors/domain-exception';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -24,6 +25,23 @@ export async function isLeagueMember(
     where: { leagueId_userId: { leagueId, userId } },
   });
   return row !== null;
+}
+
+/** The caller's role in a league: OWNER if they own it, their stored member role otherwise, or
+ *  null if the league does not exist or they are neither owner nor member. */
+export async function resolveLeagueRole(
+  prisma: PrismaService,
+  leagueId: string,
+  userId: string,
+): Promise<LeagueRole | null> {
+  const league = await prisma.league.findUnique({ where: { id: leagueId }, select: { ownerId: true } });
+  if (!league) return null;
+  if (league.ownerId === userId) return 'OWNER';
+  const member = await prisma.leagueMember.findUnique({
+    where: { leagueId_userId: { leagueId, userId } },
+    select: { role: true },
+  });
+  return member ? member.role : null;
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   LeagueSize,
   Visibility,
   LeagueRole,
+  MemberRole,
 } from './enums';
 
 // ---------------------------------------------------------------------------
@@ -52,6 +53,12 @@ export interface LeagueMemberDto {
 
 export interface AddMemberRequestDto {
   email: string;
+  // The role to grant; defaults to VIEWER server-side when omitted. Never OWNER.
+  role?: MemberRole;
+}
+
+export interface SetMemberRoleRequestDto {
+  role: MemberRole;
 }
 
 export interface SetRosterVisibilityRequestDto {

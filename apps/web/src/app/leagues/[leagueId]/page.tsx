@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ApiError } from '@/lib/api-client';
 import { serverApiClient } from '@/lib/api-client.server';
 import type { LeagueDetailDto, RosterDetailDto, TeamSummaryDto } from '@heritage-saturday/shared';
+import { hasCapability } from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,7 +52,12 @@ export default async function LeagueHomePage({
     .flatMap((r) => r.teams);
 
   const canPlay = teams.length >= 2;
-  const isOwner = league.role === 'OWNER';
+  const role = league.role;
+  const canSimulate = hasCapability(role, 'simulate');
+  const canImport = hasCapability(role, 'import');
+  const canManageMembers = hasCapability(role, 'members:manage');
+  const canSetVisibility = hasCapability(role, 'roster:visibility');
+  const roleLabel = role === 'OWNER' ? '' : ` · you are a ${role.toLowerCase()}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,57 +68,53 @@ export default async function LeagueHomePage({
             <p className="text-muted-foreground text-sm mt-1">
               {league.teamCount} {league.teamCount === 1 ? 'team' : 'teams'}
               {league.templateKey ? ' · generated from a template' : ''}
-              {!isOwner ? ' · shared with you (read-only)' : ''}
+              {roleLabel}
             </p>
           </div>
         </div>
-        {/* Owner-only actions. A member's view is read-only. */}
-        {isOwner && (
-          <div className="flex flex-wrap gap-2">
-            {canPlay && (
-              <>
-                <Button size="sm" render={<Link href={`/leagues/${leagueId}/schedule`} />}>
-                  Schedule
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  render={<Link href={`/leagues/${leagueId}/standings`} />}
-                >
-                  Standings
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  render={<Link href={`/leagues/${leagueId}/games/new`} />}
-                >
+        <div className="flex flex-wrap gap-2">
+          {/* Schedule & standings are readable by any member; New Game needs simulate. */}
+          {canPlay && (
+            <>
+              <Button size="sm" variant="outline" render={<Link href={`/leagues/${leagueId}/schedule`} />}>
+                Schedule
+              </Button>
+              <Button size="sm" variant="outline" render={<Link href={`/leagues/${leagueId}/standings`} />}>
+                Standings
+              </Button>
+              {canSimulate && (
+                <Button size="sm" render={<Link href={`/leagues/${leagueId}/games/new`} />}>
                   New Game
                 </Button>
-              </>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              render={<Link href={`/leagues/${leagueId}/imports/new`} />}
-            >
-              Import Roster
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              render={<Link href={`/leagues/${leagueId}/imports`} />}
-            >
-              Import History
-            </Button>
-          </div>
-        )}
+              )}
+            </>
+          )}
+          {canImport && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                render={<Link href={`/leagues/${leagueId}/imports/new`} />}
+              >
+                Import Roster
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                render={<Link href={`/leagues/${leagueId}/imports`} />}
+              >
+                Import History
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Owner-only management: membership and per-roster visibility. */}
-      {isOwner && (
+      {/* Management panels appear only for roles that can use them. */}
+      {(canManageMembers || canSetVisibility) && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <MembersPanel leagueId={leagueId} />
-          <RosterVisibility rosters={league.rosters} />
+          {canManageMembers && <MembersPanel leagueId={leagueId} />}
+          {canSetVisibility && <RosterVisibility rosters={league.rosters} />}
         </div>
       )}
 

@@ -3,16 +3,22 @@ import { GamesService } from './games.service';
 import { SimulateGameDto } from './dto/simulate-game.dto';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { RequestUser } from '../common/auth/trusted-proxy-user.middleware';
-import { GameOwnershipGuard, LeagueByParamOwnershipGuard } from '../common/guards/ownership.guards';
+import {
+  LeagueByParamCapabilityGuard,
+  RequireCapability,
+} from '../common/guards/capability.guards';
+import { LeagueByParamReadAccessGuard } from '../common/guards/read-access.guards';
 
-// Games are nested under a league. The controller-level guard verifies the caller owns the
-// league in the path; the service additionally checks both teams belong to it.
+// Games are nested under a league. Simulating is the `simulate` capability (owner/commissioner);
+// reading a box score is available to anyone with league read access (owner or any member), so a
+// member can review results of games in a league they belong to.
 @Controller('leagues/:leagueId/games')
 export class GamesController {
   constructor(private readonly gamesService: GamesService) {}
 
   @Post('simulate')
-  @UseGuards(LeagueByParamOwnershipGuard)
+  @RequireCapability('simulate')
+  @UseGuards(LeagueByParamCapabilityGuard)
   simulate(
     @Param('leagueId') leagueId: string,
     @Body() dto: SimulateGameDto,
@@ -22,8 +28,8 @@ export class GamesController {
   }
 
   @Get(':id/box-score')
-  @UseGuards(LeagueByParamOwnershipGuard, GameOwnershipGuard)
-  boxScore(@Param('id') id: string) {
-    return this.gamesService.getBoxScore(id);
+  @UseGuards(LeagueByParamReadAccessGuard)
+  boxScore(@Param('leagueId') leagueId: string, @Param('id') id: string) {
+    return this.gamesService.getBoxScore(id, leagueId);
   }
 }

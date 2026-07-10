@@ -13,13 +13,18 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ImportsService } from './imports.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { RequestUser } from '../common/auth/trusted-proxy-user.middleware';
-import { LeagueByParamOwnershipGuard } from '../common/guards/ownership.guards';
+import {
+  LeagueByParamCapabilityGuard,
+  RequireCapability,
+} from '../common/guards/capability.guards';
 
-// Imports are nested under a league — a roster is always imported *into* a league. The
-// controller-level guard verifies the caller owns the league in the path; the service checks
-// that any import addressed by id also belongs to that league (404 otherwise).
+// Imports are nested under a league — a roster is always imported *into* a league. Importing is
+// the `import` capability (owner/commissioner/manager); the whole controller is gated by it, so
+// the import history/preview reads are a management view too. The service checks that any import
+// addressed by id also belongs to that league (404 otherwise).
 @Controller('leagues/:leagueId/imports')
-@UseGuards(LeagueByParamOwnershipGuard)
+@RequireCapability('import')
+@UseGuards(LeagueByParamCapabilityGuard)
 export class ImportsController {
   constructor(private readonly importsService: ImportsService) {}
 

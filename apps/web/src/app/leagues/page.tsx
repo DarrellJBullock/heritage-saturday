@@ -55,7 +55,7 @@ export default async function LeaguesPage() {
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base">{league.name}</CardTitle>
                 <div className="flex gap-1">
-                  {league.role === 'MEMBER' && <Badge variant="outline">Shared with you</Badge>}
+                  {league.role !== 'OWNER' && <Badge variant="outline">Shared with you</Badge>}
                   <Badge variant={league.templateKey ? 'default' : 'secondary'}>
                     {league.templateKey ? 'Generated' : 'Custom'}
                   </Badge>

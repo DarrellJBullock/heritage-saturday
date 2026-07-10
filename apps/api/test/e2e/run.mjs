@@ -420,7 +420,7 @@ async function main() {
 
   // Owner adds B as a member by email.
   const add = await api('POST', `/leagues/${GEN}/members`, { user: USER_A, body: { email: B_EMAIL } });
-  ok('owner adds a member by email (200, role MEMBER)', add.status === 200 && add.body.role === 'MEMBER', add.body);
+  ok('owner adds a member by email (200, default role VIEWER)', add.status === 200 && add.body.role === 'VIEWER', add.body);
   const membersList = await api('GET', `/leagues/${GEN}/members`, { user: USER_A });
   ok('members list shows the owner first, then the new member',
     membersList.body[0]?.role === 'OWNER' && membersList.body.some((m) => m.email === B_EMAIL), membersList.body);
@@ -432,8 +432,8 @@ async function main() {
   ok('member can now read the league shell (200)', leagueAsMemberBefore.status === 200, leagueAsMemberBefore.status);
   ok('member sees no rosters while all are PRIVATE', leagueAsMemberBefore.body.rosters.length === 0, leagueAsMemberBefore.body.rosters);
   ok('member still gets 404 on a PRIVATE roster', (await api('GET', `/rosters/${genRosterId}`, { user: USER_B })).status === 404);
-  ok('GET /leagues as the member lists the shared league tagged MEMBER',
-    (await api('GET', '/leagues', { user: USER_B })).body.some((l) => l.id === GEN && l.role === 'MEMBER'));
+  ok('GET /leagues as the member lists the shared league tagged with the member\'s role',
+    (await api('GET', '/leagues', { user: USER_B })).body.some((l) => l.id === GEN && l.role === 'VIEWER'));
 
   // Owner promotes the roster to LEAGUE.
   const promote = await api('PATCH', `/rosters/${genRosterId}/visibility`, { user: USER_A, body: { visibility: 'LEAGUE' } });
@@ -451,11 +451,52 @@ async function main() {
   // A different user who is NOT a member still gets nothing, even though the roster is LEAGUE.
   ok('a non-member gets 404 on the LEAGUE roster', (await api('GET', `/rosters/${genRosterId}`, { user: DEV_LOGIN_USER })).status === 404);
 
-  // A member has READ only: no writes, no owner ops.
-  ok('member cannot change visibility (404, owner-only)',
-    (await api('PATCH', `/rosters/${genRosterId}/visibility`, { user: USER_B, body: { visibility: 'PRIVATE' } })).status === 404);
-  ok('member cannot add other members (404, owner-only)',
-    (await api('POST', `/leagues/${GEN}/members`, { user: USER_B, body: { email: 'x@y.test' } })).status === 404);
+  // A VIEWER member can read but performs no mutations: 403 (a member, told they lack the role)
+  // rather than 404 (which is reserved for hiding a league's existence from non-members).
+  ok('VIEWER cannot change visibility (403)',
+    (await api('PATCH', `/rosters/${genRosterId}/visibility`, { user: USER_B, body: { visibility: 'PRIVATE' } })).status === 403);
+  ok('VIEWER cannot add members (403)',
+    (await api('POST', `/leagues/${GEN}/members`, { user: USER_B, body: { email: 'x@y.test' } })).status === 403);
+  ok('VIEWER cannot import (403)',
+    (await api('GET', `/leagues/${GEN}/imports`, { user: USER_B })).status === 403);
+  ok('VIEWER cannot simulate (403)',
+    (await api('POST', `/leagues/${GEN}/games/simulate`, { user: USER_B, body: { homeTeamId: P, awayTeamId: genTeams[1].id, homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3', awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3' } })).status === 403);
+  // But a VIEWER CAN read the season (schedule/standings are league content).
+  ok('VIEWER can read the schedule', (await api('GET', `/leagues/${GEN}/schedule`, { user: USER_B })).status === 200);
+  ok('VIEWER can read the standings', (await api('GET', `/leagues/${GEN}/standings`, { user: USER_B })).status === 200);
+
+  // -------------------------------------------------------------------
+  section('League roles — capability boundaries per role (Manager, Commissioner)');
+  // -------------------------------------------------------------------
+  // Promote B to MANAGER: content operations, but not the season or membership.
+  const toManager = await api('PATCH', `/leagues/${GEN}/members/${USER_B}`, { user: USER_A, body: { role: 'MANAGER' } });
+  ok('owner sets a member\'s role to MANAGER (200)', toManager.status === 200 && toManager.body.role === 'MANAGER', toManager.body);
+  ok('MANAGER can change roster visibility',
+    (await api('PATCH', `/rosters/${genRosterId}/visibility`, { user: USER_B, body: { visibility: 'LEAGUE' } })).status === 200);
+  ok('MANAGER can read import history (a content view)',
+    (await api('GET', `/leagues/${GEN}/imports`, { user: USER_B })).status === 200);
+  ok('MANAGER still cannot simulate (403)',
+    (await api('POST', `/leagues/${GEN}/games/simulate`, { user: USER_B, body: { homeTeamId: P, awayTeamId: genTeams[1].id, homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3', awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3' } })).status === 403);
+  ok('MANAGER still cannot manage members (403)',
+    (await api('PATCH', `/leagues/${GEN}/members/${USER_A}`, { user: USER_B, body: { role: 'VIEWER' } })).status === 403);
+
+  // Promote B to COMMISSIONER: runs the league, but membership stays owner-only.
+  ok('owner sets a member\'s role to COMMISSIONER (200)',
+    (await api('PATCH', `/leagues/${GEN}/members/${USER_B}`, { user: USER_A, body: { role: 'COMMISSIONER' } })).status === 200);
+  ok('COMMISSIONER can simulate a game',
+    (await api('POST', `/leagues/${GEN}/games/simulate`, { user: USER_B, body: { homeTeamId: P, awayTeamId: genTeams[1].id, homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3', awayOffArchetype: 'SPREAD', awayDefArchetype: 'NICKEL_ZONE' } })).status === 201);
+  ok('COMMISSIONER still cannot manage members (403)',
+    (await api('POST', `/leagues/${GEN}/members`, { user: USER_B, body: { email: 'x@y.test' } })).status === 403);
+
+  // An invalid role value is rejected.
+  ok('setting an invalid role is rejected (400)',
+    (await api('PATCH', `/leagues/${GEN}/members/${USER_B}`, { user: USER_A, body: { role: 'OWNER' } })).status === 400);
+  // A non-member cannot be a target of role change (404).
+  ok('setting the role of a non-member is 404',
+    (await api('PATCH', `/leagues/${GEN}/members/${DEV_LOGIN_USER}`, { user: USER_A, body: { role: 'MANAGER' } })).status === 404);
+  // A non-member still gets 404 (existence hidden), not 403, on a mutation.
+  ok('a non-member gets 404 (not 403) trying to simulate',
+    (await api('POST', `/leagues/${GEN}/games/simulate`, { user: DEV_LOGIN_USER, body: { homeTeamId: P, awayTeamId: genTeams[1].id, homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3', awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3' } })).status === 404);
 
   // Removing the member revokes access.
   ok('owner removes the member (204)', (await api('DELETE', `/leagues/${GEN}/members/${USER_B}`, { user: USER_A })).status === 204);

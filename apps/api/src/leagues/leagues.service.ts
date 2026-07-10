@@ -113,7 +113,10 @@ export class LeaguesService {
     const leagues = await this.prisma.league.findMany({
       where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
       orderBy: { createdAt: 'desc' },
-      include: { rosters: { select: { _count: { select: { teams: true } } } } },
+      include: {
+        rosters: { select: { _count: { select: { teams: true } } } },
+        members: { where: { userId }, select: { role: true } },
+      },
     });
 
     return leagues.map((l) =>
@@ -124,7 +127,7 @@ export class LeaguesService {
         l.templateKey,
         l.createdAt,
         l.rosters.reduce((sum, r) => sum + r._count.teams, 0),
-        l.ownerId === userId ? 'OWNER' : 'MEMBER',
+        l.ownerId === userId ? 'OWNER' : (l.members[0]?.role ?? 'VIEWER'),
       ),
     );
   }
@@ -142,6 +145,7 @@ export class LeaguesService {
           orderBy: { createdAt: 'desc' },
           include: { _count: { select: { teams: true } } },
         },
+        members: { where: { userId }, select: { role: true } },
       },
     });
     if (!league) {
@@ -149,6 +153,7 @@ export class LeaguesService {
     }
 
     const isOwner = league.ownerId === userId;
+    const role = isOwner ? 'OWNER' : (league.members[0]?.role ?? 'VIEWER');
     // The guard already admitted the caller; a non-owner here is necessarily a member.
     const visibleRosters = isOwner
       ? league.rosters
@@ -171,7 +176,7 @@ export class LeaguesService {
         league.templateKey,
         league.createdAt,
         teamCount,
-        isOwner ? 'OWNER' : 'MEMBER',
+        role,
       ),
       rosters,
     };
