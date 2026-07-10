@@ -255,3 +255,47 @@ export interface BoxScoreResponseDto {
   teamStats: { home: TeamGameStatsDto; away: TeamGameStatsDto };
   playerStats: { home: PlayerGameStatsDto[]; away: PlayerGameStatsDto[] };
 }
+
+// ---------------------------------------------------------------------------
+// Schedule & standings (season structure)
+// ---------------------------------------------------------------------------
+
+export interface ScheduleTeamRefDto {
+  teamId: string;
+  teamName: string;
+}
+
+export interface ScheduleGameDto {
+  gameId: string;
+  week: number;
+  home: ScheduleTeamRefDto;
+  away: ScheduleTeamRefDto;
+  status: GameStatus;
+  // Null until the game's week has been simulated.
+  homeScore: number | null;
+  awayScore: number | null;
+}
+
+export interface ScheduleResponseDto {
+  weeks: { week: number; games: ScheduleGameDto[] }[];
+  // The lowest week that still has an unplayed game, or null when the season is complete (or
+  // no schedule exists yet, in which case `weeks` is empty too).
+  nextWeek: number | null;
+}
+
+export interface StandingRowDto {
+  teamId: string;
+  teamName: string;
+  conference: string | null;
+  division: string | null;
+  wins: number;
+  losses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  differential: number;
+}
+
+export interface StandingsResponseDto {
+  // One group per conference/division; rows sorted by wins desc, then differential desc.
+  groups: { conference: string | null; division: string | null; rows: StandingRowDto[] }[];
+}

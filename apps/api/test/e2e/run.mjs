@@ -348,6 +348,65 @@ async function main() {
   ok('user B gets 404 reading user A\'s player detail', playerAsB.status === 404, playerAsB.body);
 
   // -------------------------------------------------------------------
+  section('Schedule & standings — round-robin season, week-by-week, computed standings');
+  // -------------------------------------------------------------------
+  const GEN = gen.body.id; // the 8-team generated league
+  const sched = await api('POST', `/leagues/${GEN}/schedule`, { user: USER_A });
+  ok('POST /schedule generates a single round-robin: 7 weeks, 28 games, all PENDING',
+    sched.status === 201 && sched.body.weeks.length === 7 &&
+      sched.body.weeks.reduce((n, w) => n + w.games.length, 0) === 28 &&
+      sched.body.weeks.every((w) => w.games.length === 4 && w.games.every((g) => g.status === 'PENDING')),
+    { weeks: sched.body.weeks?.length, next: sched.body.nextWeek });
+  ok('a fresh schedule reports nextWeek === 1', sched.body.nextWeek === 1, sched.body.nextWeek);
+
+  const regen = await api('POST', `/leagues/${GEN}/schedule`, { user: USER_A });
+  ok('regenerating an existing schedule is rejected (409)', regen.status === 409, regen.body);
+
+  const wk1 = await api('POST', `/leagues/${GEN}/schedule/simulate-week`, { user: USER_A });
+  const wk1Games = wk1.body.weeks.find((w) => w.week === 1).games;
+  ok('simulate-week plays week 1 (4 games COMPLETE with scores) and advances nextWeek to 2',
+    wk1.status === 200 && wk1.body.nextWeek === 2 &&
+      wk1Games.every((g) => g.status === 'COMPLETE' && g.homeScore !== null && g.awayScore !== null),
+    { next: wk1.body.nextWeek });
+
+  const stand1 = await api('GET', `/leagues/${GEN}/standings`, { user: USER_A });
+  const allRows1 = stand1.body.groups.flatMap((gr) => gr.rows);
+  ok('standings after week 1: 4 teams 1-0 and 4 teams 0-1',
+    stand1.status === 200 &&
+      allRows1.filter((r) => r.wins === 1 && r.losses === 0).length === 4 &&
+      allRows1.filter((r) => r.wins === 0 && r.losses === 1).length === 4,
+    allRows1.map((r) => `${r.wins}-${r.losses}`));
+  ok('standings differential equals pointsFor - pointsAgainst for every row',
+    allRows1.every((r) => r.differential === r.pointsFor - r.pointsAgainst), allRows1[0]);
+  ok('standings are grouped by conference/division',
+    stand1.body.groups.length >= 1 && stand1.body.groups.every((gr) => gr.conference !== undefined),
+    stand1.body.groups.map((gr) => `${gr.conference}/${gr.division}: ${gr.rows.length}`));
+
+  // Play the remaining six weeks.
+  for (let w = 2; w <= 7; w++) {
+    await api('POST', `/leagues/${GEN}/schedule/simulate-week`, { user: USER_A });
+  }
+  const done = await api('POST', `/leagues/${GEN}/schedule/simulate-week`, { user: USER_A });
+  ok('simulating past the final week is rejected (409 season complete)', done.status === 409, done.body);
+
+  const finalSched = await api('GET', `/leagues/${GEN}/schedule`, { user: USER_A });
+  ok('a fully-played season reports nextWeek === null', finalSched.body.nextWeek === null, finalSched.body.nextWeek);
+
+  const standF = await api('GET', `/leagues/${GEN}/standings`, { user: USER_A });
+  const allRowsF = standF.body.groups.flatMap((gr) => gr.rows);
+  ok('every team has played 7 games (wins + losses === 7) at season end',
+    allRowsF.length === 8 && allRowsF.every((r) => r.wins + r.losses === 7),
+    allRowsF.map((r) => `${r.wins}-${r.losses}`));
+
+  // Ownership: user B cannot read or drive user A's season.
+  const schedAsB = await api('GET', `/leagues/${GEN}/schedule`, { user: USER_B });
+  ok('user B gets 404 reading user A\'s schedule', schedAsB.status === 404, schedAsB.body);
+  const standAsB = await api('GET', `/leagues/${GEN}/standings`, { user: USER_B });
+  ok('user B gets 404 reading user A\'s standings', standAsB.status === 404, standAsB.body);
+  const simAsB = await api('POST', `/leagues/${GEN}/schedule/simulate-week`, { user: USER_B });
+  ok('user B gets 404 trying to simulate user A\'s season', simAsB.status === 404, simAsB.body);
+
+  // -------------------------------------------------------------------
   section('Story 1.1 / 1.5 / 1.8 — valid CSV import: preview + commit + history');
   // -------------------------------------------------------------------
   const validCsv = await uploadAndCommit(USER_A, 'valid-roster.csv', 'valid csv');

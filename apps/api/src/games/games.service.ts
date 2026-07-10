@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { simulateGame, SimInputTeam, SimulationInput } from '@heritage-saturday/simulation-engine';
+import { Prisma } from '@prisma/client';
+import {
+  simulateGame,
+  SimInputTeam,
+  SimulationInput,
+  SimulationResult,
+} from '@heritage-saturday/simulation-engine';
 import {
   DEFENSIVE_ARCHETYPES,
   OFFENSIVE_ARCHETYPES,
@@ -89,83 +95,7 @@ export class GamesService {
         },
       });
 
-      if (result.events.length > 0) {
-        await tx.gameEvent.createMany({
-          data: result.events.map((e) => ({
-            gameId: createdGame.id,
-            quarter: e.quarter,
-            sequence: e.sequence,
-            type: e.type,
-            teamId: e.teamId,
-            payload: e.payload as object,
-          })),
-        });
-      }
-
-      const quarterFor = (side: 'home' | 'away', quarter: number): number =>
-        result.quarterByQuarter.find((q) => q.quarter === quarter)?.[side] ?? 0;
-
-      await tx.teamGameStats.createMany({
-        data: [
-          {
-            gameId: createdGame.id,
-            teamId: dto.homeTeamId,
-            q1: quarterFor('home', 1),
-            q2: quarterFor('home', 2),
-            q3: quarterFor('home', 3),
-            q4: quarterFor('home', 4),
-            ot: quarterFor('home', 5),
-            totalYards: result.teamStats.home.totalYards,
-            passingYards: result.teamStats.home.passingYards,
-            rushingYards: result.teamStats.home.rushingYards,
-            turnovers: result.teamStats.home.turnovers,
-            timeOfPossessionSeconds: result.teamStats.home.timeOfPossessionSeconds,
-          },
-          {
-            gameId: createdGame.id,
-            teamId: dto.awayTeamId,
-            q1: quarterFor('away', 1),
-            q2: quarterFor('away', 2),
-            q3: quarterFor('away', 3),
-            q4: quarterFor('away', 4),
-            ot: quarterFor('away', 5),
-            totalYards: result.teamStats.away.totalYards,
-            passingYards: result.teamStats.away.passingYards,
-            rushingYards: result.teamStats.away.rushingYards,
-            turnovers: result.teamStats.away.turnovers,
-            timeOfPossessionSeconds: result.teamStats.away.timeOfPossessionSeconds,
-          },
-        ],
-      });
-
-      if (result.playerStats.length > 0) {
-        await tx.playerGameStats.createMany({
-          data: result.playerStats.map((p) => ({
-            gameId: createdGame.id,
-            playerId: p.playerId,
-            teamId: p.teamId,
-            passAttempts: p.passAttempts,
-            passCompletions: p.passCompletions,
-            passYards: p.passYards,
-            passTDs: p.passTDs,
-            interceptions: p.interceptions,
-            carries: p.carries,
-            rushYards: p.rushYards,
-            rushTDs: p.rushTDs,
-            targets: p.targets,
-            receptions: p.receptions,
-            receivingYards: p.receivingYards,
-            receivingTDs: p.receivingTDs,
-            tackles: p.tackles,
-            sacks: p.sacks,
-            defInterceptions: p.defInterceptions,
-            fgMade: p.fgMade,
-            fgAttempts: p.fgAttempts,
-            xpMade: p.xpMade,
-          })),
-        });
-      }
-
+      await this.writeResults(tx, createdGame.id, dto.homeTeamId, dto.awayTeamId, result);
       return createdGame;
     });
 
@@ -176,6 +106,139 @@ export class GamesService {
       awayScore: result.finalScore.away,
       seed,
     };
+  }
+
+  /**
+   * Play a scheduled (PENDING) game: run the engine with the game's own stored seed/archetypes
+   * and persist the result, flipping it to COMPLETE. Shares the write path with `simulate` so
+   * a season game and a one-off game produce identical rows. Used by ScheduleService per week.
+   */
+  async playScheduledGame(gameId: string): Promise<void> {
+    const game = await this.prisma.game.findUnique({ where: { id: gameId } });
+    if (!game) {
+      throw new DomainException(404, 'NOT_FOUND', 'Game not found');
+    }
+    if (game.status === 'COMPLETE') return; // idempotent — already played
+
+    const [homeLegality, awayLegality] = await Promise.all([
+      this.depthChartsService.checkLegality(game.homeTeamId),
+      this.depthChartsService.checkLegality(game.awayTeamId),
+    ]);
+    if (!homeLegality.legal || !awayLegality.legal) {
+      const teamId = !homeLegality.legal ? game.homeTeamId : game.awayTeamId;
+      throw new DomainException(422, 'UNFILLABLE_POSITIONS', 'A scheduled team cannot fill required starting positions', {
+        teamId,
+        positions: (!homeLegality.legal ? homeLegality : awayLegality).unfilled,
+      });
+    }
+
+    const [homeSimTeam, awaySimTeam] = await Promise.all([
+      this.buildSimTeam(game.homeTeamId, game.homeOffArchetype, game.homeDefArchetype),
+      this.buildSimTeam(game.awayTeamId, game.awayOffArchetype, game.awayDefArchetype),
+    ]);
+    const result = simulateGame({ home: homeSimTeam, away: awaySimTeam, seed: game.seed });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.game.update({
+        where: { id: game.id },
+        data: {
+          status: 'COMPLETE',
+          homeScore: result.finalScore.home,
+          awayScore: result.finalScore.away,
+          completedAt: new Date(),
+        },
+      });
+      await this.writeResults(tx, game.id, game.homeTeamId, game.awayTeamId, result);
+    });
+  }
+
+  /**
+   * Persist a simulation result's events and team/player stats for an already-created game row.
+   * Shared by `simulate` (fresh game) and `playScheduledGame` (existing PENDING game).
+   */
+  private async writeResults(
+    tx: Prisma.TransactionClient,
+    gameId: string,
+    homeTeamId: string,
+    awayTeamId: string,
+    result: SimulationResult,
+  ): Promise<void> {
+    if (result.events.length > 0) {
+      await tx.gameEvent.createMany({
+        data: result.events.map((e) => ({
+          gameId,
+          quarter: e.quarter,
+          sequence: e.sequence,
+          type: e.type,
+          teamId: e.teamId,
+          payload: e.payload as object,
+        })),
+      });
+    }
+
+    const quarterFor = (side: 'home' | 'away', quarter: number): number =>
+      result.quarterByQuarter.find((q) => q.quarter === quarter)?.[side] ?? 0;
+
+    await tx.teamGameStats.createMany({
+      data: [
+        {
+          gameId,
+          teamId: homeTeamId,
+          q1: quarterFor('home', 1),
+          q2: quarterFor('home', 2),
+          q3: quarterFor('home', 3),
+          q4: quarterFor('home', 4),
+          ot: quarterFor('home', 5),
+          totalYards: result.teamStats.home.totalYards,
+          passingYards: result.teamStats.home.passingYards,
+          rushingYards: result.teamStats.home.rushingYards,
+          turnovers: result.teamStats.home.turnovers,
+          timeOfPossessionSeconds: result.teamStats.home.timeOfPossessionSeconds,
+        },
+        {
+          gameId,
+          teamId: awayTeamId,
+          q1: quarterFor('away', 1),
+          q2: quarterFor('away', 2),
+          q3: quarterFor('away', 3),
+          q4: quarterFor('away', 4),
+          ot: quarterFor('away', 5),
+          totalYards: result.teamStats.away.totalYards,
+          passingYards: result.teamStats.away.passingYards,
+          rushingYards: result.teamStats.away.rushingYards,
+          turnovers: result.teamStats.away.turnovers,
+          timeOfPossessionSeconds: result.teamStats.away.timeOfPossessionSeconds,
+        },
+      ],
+    });
+
+    if (result.playerStats.length > 0) {
+      await tx.playerGameStats.createMany({
+        data: result.playerStats.map((p) => ({
+          gameId,
+          playerId: p.playerId,
+          teamId: p.teamId,
+          passAttempts: p.passAttempts,
+          passCompletions: p.passCompletions,
+          passYards: p.passYards,
+          passTDs: p.passTDs,
+          interceptions: p.interceptions,
+          carries: p.carries,
+          rushYards: p.rushYards,
+          rushTDs: p.rushTDs,
+          targets: p.targets,
+          receptions: p.receptions,
+          receivingYards: p.receivingYards,
+          receivingTDs: p.receivingTDs,
+          tackles: p.tackles,
+          sacks: p.sacks,
+          defInterceptions: p.defInterceptions,
+          fgMade: p.fgMade,
+          fgAttempts: p.fgAttempts,
+          xpMade: p.xpMade,
+        })),
+      });
+    }
   }
 
   async getBoxScore(gameId: string): Promise<BoxScoreResponseDto> {

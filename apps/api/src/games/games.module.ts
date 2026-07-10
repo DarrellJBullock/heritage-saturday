@@ -8,5 +8,6 @@ import { DepthChartsModule } from '../depth-charts/depth-charts.module';
   imports: [DepthChartsModule],
   controllers: [GamesController],
   providers: [GamesService, GameOwnershipGuard],
+  exports: [GamesService],
 })
 export class GamesModule {}

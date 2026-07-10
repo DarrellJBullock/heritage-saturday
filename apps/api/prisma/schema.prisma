@@ -325,6 +325,9 @@ model Game {
   status           GameStatus         @default(PENDING)
   homeScore        Int?
   awayScore        Int?
+  // Set for a scheduled season game (its position in the round-robin); null for an ad-hoc
+  // one-off game. A scheduled game stays PENDING until its week is simulated, then COMPLETE.
+  week             Int?
   createdAt        DateTime           @default(now())
   completedAt      DateTime?
 
@@ -334,6 +337,7 @@ model Game {
 
   @@index([ownerId, createdAt])
   @@index([leagueId, createdAt])
+  @@index([leagueId, week])
 }
 
 model GameEvent {
