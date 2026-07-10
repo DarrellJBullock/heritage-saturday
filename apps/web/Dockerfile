@@ -31,10 +31,9 @@ COPY apps/web ./apps/web
 RUN npm run build -w @heritage-saturday/shared
 
 # NEXT_PUBLIC_* is inlined into the client bundle at BUILD time, not read at runtime.
-# It must therefore be the address the *browser* uses — the host's published port.
-ARG NEXT_PUBLIC_API_URL=http://localhost:3001
+# There is deliberately no NEXT_PUBLIC_API_URL: the browser calls this app's own
+# /api/proxy/* route on the same origin, so the API address never leaves the server.
 ARG NEXT_PUBLIC_DEV_USER_ID=dev-user-1
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_DEV_USER_ID=$NEXT_PUBLIC_DEV_USER_ID
 
 RUN npm run build -w @heritage-saturday/web
@@ -59,6 +58,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 USER nextjs
 EXPOSE 3000
 
-# API_URL (server-side only) is injected at runtime by docker-compose; see
-# apps/web/src/lib/config.ts for why it is separate from NEXT_PUBLIC_API_URL.
+# API_URL and API_SHARED_SECRET (both server-side only) are injected at runtime by
+# docker-compose; see apps/web/src/lib/config.ts for why neither is NEXT_PUBLIC_*.
 CMD ["node", "apps/web/server.js"]

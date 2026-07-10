@@ -59,9 +59,8 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        # Baked into the client bundle at build time. This is the address the BROWSER
-        # uses, so it is the host's published API port, not a container hostname.
-        NEXT_PUBLIC_API_URL: http://localhost:3001
+        # Baked into the client bundle at build time. The API's address is NOT here: the
+        # browser calls this app's own /api/proxy/* route on the same origin.
         NEXT_PUBLIC_DEV_USER_ID: dev-user-1
     container_name: heritage-saturday-web
     restart: unless-stopped
@@ -74,6 +73,9 @@ services:
       #   WEB_API_URL=http://api:3001 docker compose --profile api --profile web up --build
       # See apps/web/src/lib/config.ts.
       API_URL: ${WEB_API_URL:-http://host.docker.internal:3001}
+      # Only needed if the API is running with API_SHARED_SECRET set. The default compose
+      # `api` service opts out via ALLOW_INSECURE_NO_API_KEY, so this is normally empty.
+      API_SHARED_SECRET: ${API_SHARED_SECRET:-}
     extra_hosts:
       # Docker Desktop provides host.docker.internal; on Linux this mapping creates it.
       # Only needed while the API runs on the host.
@@ -96,6 +98,10 @@ services:
       # Compose DNS, and the container-internal port 5432 — not the host's 5433 mapping.
       DATABASE_URL: postgresql://heritage:heritage@postgres:5432/heritage_saturday?schema=public
       REDIS_URL: redis://redis:6379
+      # The image sets NODE_ENV=production, and the API refuses to start in production
+      # without API_SHARED_SECRET. This is a local container on a private network, so opt
+      # out explicitly. A real deployment sets the secret instead of this flag.
+      ALLOW_INSECURE_NO_API_KEY: "true"
     depends_on:
       postgres:
         condition: service_healthy

@@ -124,20 +124,33 @@ service is behind a profile:
 docker compose --profile web up --build web   # http://localhost:3000
 ```
 
-`apps/api` still runs on the host (`npm run start:dev`), and the web container reaches it in
-**two different ways**, which is the one subtlety here:
+`apps/api` still runs on the host (`npm run start:dev`), and **nothing in the browser ever
+addresses it directly**, which is the one subtlety here:
 
-| Caller | Env var | Value | Why |
-|---|---|---|---|
-| Browser | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Inlined into the client bundle at *build* time; the browser runs on the host. |
-| Server Components | `API_URL` | `http://host.docker.internal:3001` | Read at *runtime*. Inside the container `localhost` is the container, not the host. |
+| Caller | How it reaches the API | Why |
+|---|---|---|
+| Browser | `/api/proxy/*` on its own origin | The API is gated by `API_SHARED_SECRET`, which cannot ship in a client bundle. The proxy route attaches it server-side. |
+| Server Components | `API_URL`, default `http://host.docker.internal:3001` | Read at *runtime*. Inside the container `localhost` is the container, not the host. |
 
 `apps/web/src/app/imports/page.tsx` and `games/[id]/box-score/page.tsx` are Server
-Components that fetch the API, so without the `API_URL` split they would 500 inside a
-container while the client-rendered pages kept working. `API_URL` is deliberately not
-`NEXT_PUBLIC_*` — a container-internal hostname must never be baked into a client bundle.
+Components that fetch the API, so without `API_URL` they would 500 inside a container while
+the client-rendered pages kept working. `API_URL` is deliberately not `NEXT_PUBLIC_*` — it is
+paired with the secret, and a container-internal hostname must never reach a client bundle.
 
-Both default to `localhost:3001`, so running everything on the host needs no env at all.
+`API_URL` defaults to `localhost:3001`, so running everything on the host needs no env at all.
+
+### Locking the API
+
+The API trusts an `x-user-id` header (`AuthStubMiddleware`), so any caller can claim any
+identity. That is fine on localhost and unacceptable on a reachable host. `ApiKeyMiddleware`
+gates the API behind `API_SHARED_SECRET`, and with `NODE_ENV=production` the API **refuses to
+boot** without it — a forgotten env var must not silently publish an open API. Set
+`ALLOW_INSECURE_NO_API_KEY=true` to override deliberately; the local `api` compose service
+does, since it is only reachable on a private network. CI does not — it runs both containers
+with a real secret, so the gate is exercised the way it ships.
+
+When the secret is set, give `apps/web` the same value so its proxy and Server Components can
+present it. Local development leaves it unset entirely and the API logs a warning instead.
 
 ## Running apps/api in a container
 

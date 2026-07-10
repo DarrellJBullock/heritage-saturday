@@ -1,5 +1,5 @@
 import type { ApiErrorShape, DomainErrorCode } from '@heritage-saturday/shared';
-import { API_BASE_URL, DEV_USER_ID } from './config';
+import { API_BASE_URL, API_SHARED_SECRET, DEV_USER_ID, IS_SERVER } from './config';
 
 /**
  * Typed error thrown by `apiClient` for any non-2xx response. Wraps the
@@ -45,6 +45,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     'x-user-id': DEV_USER_ID,
     ...options.headers,
   };
+  // Server-side callers talk to the API directly, so they must present the shared secret.
+  // Browser callers go through /api/proxy, which attaches it — the secret never ships to a
+  // client bundle. IS_SERVER is the guard that keeps it that way.
+  if (IS_SERVER && API_SHARED_SECRET) {
+    headers['x-api-key'] = API_SHARED_SECRET;
+  }
   if (!options.isFormData && options.body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
