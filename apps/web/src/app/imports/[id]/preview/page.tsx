@@ -61,6 +61,14 @@ export default function ImportPreviewPage({ params }: PageProps) {
 
   const hasBlockingErrors = preview?.rows.some((row) => row.status === 'ERROR') ?? false;
 
+  // WARNING rows are valid but undeliverable: an orphaned player/coach/depth-chart row
+  // whose team or player will not be created, or a depth chart that cannot cover the
+  // required lineup. Commit drops them and counts them as `skipped`. Surface them, and
+  // deduplicate the messages — one missing team orphans every one of its rows, and
+  // repeating the same sentence twenty times buries the signal.
+  const warningRows = preview?.rows.filter((row) => row.status === 'WARNING') ?? [];
+  const warningMessages = Array.from(new Set(warningRows.flatMap((row) => row.messages)));
+
   async function handleCommit() {
     setIsCommitting(true);
     setCommitError(null);
@@ -100,8 +108,8 @@ export default function ImportPreviewPage({ params }: PageProps) {
       <div>
         <h1 className="text-xl font-semibold">Preview: {preview.fileName}</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Review each row before committing. Rows marked ERROR are excluded from the
-          import.
+          Review each row before committing. Rows marked ERROR or WARNING are excluded
+          from the import — only OK rows are created.
         </p>
       </div>
 
@@ -139,10 +147,29 @@ export default function ImportPreviewPage({ params }: PageProps) {
                 <AlertDescription>{commitError}</AlertDescription>
               </Alert>
             )}
+            {warningRows.length > 0 && (
+              <Alert>
+                <AlertTitle>
+                  {warningRows.length} {warningRows.length === 1 ? 'row' : 'rows'} will not be
+                  created
+                </AlertTitle>
+                <AlertDescription>
+                  <p className="mb-2">
+                    These rows are valid, but reference something this import will not create,
+                    or belong to a depth chart that cannot be used. Committing is safe — they
+                    are skipped, not failed. Fix the cause and re-upload to include them.
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    {warningMessages.map((message) => (
+                      <li key={message}>{message}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
             {hasBlockingErrors && (
               <p className="text-xs text-muted-foreground">
-                Rows with ERROR status will be skipped automatically; only OK/WARNING rows
-                are committed.
+                Rows with ERROR status are excluded automatically and reported as failed.
               </p>
             )}
             <Button onClick={handleCommit} disabled={isCommitting} className="w-fit">
