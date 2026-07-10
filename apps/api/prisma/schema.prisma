@@ -110,6 +110,7 @@ model User {
 
   leagues          League[]
   leagueMemberships LeagueMember[]
+  sentInvitations  Invitation[]  @relation("SentInvitations")
   rosters          Roster[]
   imports          RosterImport[]
   games            Game[]
@@ -139,10 +140,11 @@ model League {
   visibility  Visibility @default(PRIVATE)
   createdAt   DateTime   @default(now())
 
-  rosters Roster[]
-  imports RosterImport[]
-  games   Game[]
-  members LeagueMember[]
+  rosters     Roster[]
+  imports     RosterImport[]
+  games       Game[]
+  members     LeagueMember[]
+  invitations Invitation[]
 
   @@index([ownerId])
 }
@@ -171,6 +173,32 @@ model LeagueMember {
 
   @@unique([leagueId, userId])
   @@index([userId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+// A pending/answered invitation to join a league. Keyed on EMAIL, not a user FK, so an owner can
+// invite someone before they have an account — the invite surfaces in their inbox the first time
+// they sign in with that email. Accepting creates a LeagueMember with `role`. One row per
+// (league, email); re-inviting upserts it back to PENDING.
+model Invitation {
+  id          String           @id @default(cuid())
+  leagueId    String
+  league      League           @relation(fields: [leagueId], references: [id])
+  email       String
+  role        LeagueRole       @default(VIEWER)
+  status      InvitationStatus @default(PENDING)
+  invitedById String
+  invitedBy   User             @relation("SentInvitations", fields: [invitedById], references: [id])
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  @@unique([leagueId, email])
+  @@index([email, status])
 }
 
 model RosterImport {

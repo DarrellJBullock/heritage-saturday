@@ -64,6 +64,10 @@ export function hasCapability(role: LeagueRole, capability: Capability): boolean
   return ROLE_CAPABILITIES[role].includes(capability);
 }
 
+// Lifecycle of a league invitation.
+export const INVITATION_STATUSES = ['PENDING', 'ACCEPTED', 'DECLINED'] as const;
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number];
+
 export const OFFENSIVE_ARCHETYPES = [
   'BALANCED', 'POWER_RUN', 'SPREAD', 'VERTICAL_PASSING',
   'WEST_COAST', 'OPTION_RPO', 'PLAY_ACTION_HEAVY',

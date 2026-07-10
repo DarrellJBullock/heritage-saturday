@@ -13,6 +13,7 @@ import {
   Visibility,
   LeagueRole,
   MemberRole,
+  InvitationStatus,
 } from './enums';
 
 // ---------------------------------------------------------------------------
@@ -63,6 +64,23 @@ export interface SetMemberRoleRequestDto {
 
 export interface SetRosterVisibilityRequestDto {
   visibility: Visibility;
+}
+
+export interface CreateInvitationRequestDto {
+  email: string;
+  // Role to grant on acceptance; defaults VIEWER server-side. Never OWNER.
+  role?: MemberRole;
+}
+
+export interface InvitationDto {
+  id: string;
+  leagueId: string;
+  leagueName: string;
+  email: string;
+  role: MemberRole;
+  status: InvitationStatus;
+  invitedByEmail: string;
+  createdAt: string;
 }
 
 // ---------------------------------------------------------------------------

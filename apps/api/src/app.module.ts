@@ -5,6 +5,7 @@ import { TrustedProxyUserMiddleware } from './common/auth/trusted-proxy-user.mid
 import { AuthModule } from './auth/auth.module';
 import { LeaguesModule } from './leagues/leagues.module';
 import { MembersModule } from './members/members.module';
+import { InvitationsModule } from './invitations/invitations.module';
 import { ImportsModule } from './imports/imports.module';
 import { RostersModule } from './rosters/rosters.module';
 import { TeamsModule } from './teams/teams.module';
@@ -19,6 +20,7 @@ import { ScheduleModule } from './schedule/schedule.module';
     AuthModule,
     LeaguesModule,
     MembersModule,
+    InvitationsModule,
     ImportsModule,
     RostersModule,
     TeamsModule,
