@@ -90,19 +90,30 @@ Every push and pull request runs `.github/workflows/ci.yml`, which has three job
 | `worker-smoke` | the BullMQ transport against a real Redis service |
 | `e2e` | the HTTP suite against a real Postgres service |
 
-**CI is the real gate.** Open a PR and wait for the three jobs to go green before merging.
+**CI is the gate, and it is enforced.** `main` is a protected branch: all three checks must
+pass before a pull request can merge, and the rule applies to admins too. A direct push to
+`main` is rejected by the server:
+
+```
+remote: error: GH006: Protected branch update failed for refs/heads/main.
+remote: - 3 of 3 required status checks are expected.
+```
+
+So the workflow is: branch, open a PR, let CI run. `gh pr merge --auto` is enabled and will
+merge for you the moment the three jobs go green. `strict` is on, so a branch must be up to
+date with `main` before it can merge — rebase if GitHub says the branch is behind.
 
 A `pre-push` hook (`.githooks/pre-push`, installed automatically by the root `prepare`
 script) runs `npm run typecheck` and `npm test` when you push to `main`. It skips the e2e
 and worker-smoke suites, which need Postgres and Redis; CI covers those. Bypass it with
 `SKIP_HOOKS=1 git push`.
 
-The hook is **advisory, not enforcement**. It is trivially bypassed and protects nothing on
-the server. Branch protection, rulesets, and auto-merge would enforce this properly, but all
-three require GitHub Pro for a private repository — on the Free plan the protection and
-ruleset APIs return 403, and `allow_auto_merge` silently stays `false`. If this repo is ever
-made public or upgraded, enable those and this hook becomes a convenience rather than the
-only line of defence.
+The hook is a **convenience, not the gate** — it catches a broken build before you spend a
+CI round trip on it. Branch protection is what actually protects `main`.
+
+*(Historical note: while this repo was private on a Free plan, none of this was possible.
+The protection and ruleset APIs returned 403, and `PATCH allow_auto_merge=true` returned
+200 while silently leaving the value `false`. Making the repo public unlocked all three.)*
 
 ## Follow-ups (not in this Capability-1 slice)
 - `apps/web` service definition in `docker-compose.yml`. (`apps/worker` is scaffolded but
