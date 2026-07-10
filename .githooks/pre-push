@@ -1,0 +1,51 @@
+#!/bin/sh
+# Pre-push guard for pushes to main.
+#
+# This repo is private on a Free plan, so GitHub branch protection, rulesets, and
+# auto-merge are all unavailable (they 403, or silently no-op). This hook is the
+# closest local approximation. It is ADVISORY, not enforcement: anyone can bypass it
+# with `git push --no-verify`, and it protects nothing on the server. The real gate
+# remains the CI workflow — open a PR and wait for the three jobs to go green.
+#
+# Runs only when pushing to main, and skips the e2e suite (it needs Postgres) and the
+# worker smoke test (it needs Redis). CI covers both.
+#
+# Installed via `core.hooksPath=.githooks`, set by the root package.json `prepare` script.
+# Skip deliberately with: SKIP_HOOKS=1 git push
+
+if [ "$SKIP_HOOKS" = "1" ]; then
+  echo "pre-push: SKIP_HOOKS=1 set, skipping checks."
+  exit 0
+fi
+
+# stdin: "<local ref> <local sha> <remote ref> <remote sha>" per ref being pushed.
+pushing_main=0
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main) pushing_main=1 ;;
+  esac
+done
+
+if [ "$pushing_main" -eq 0 ]; then
+  exit 0
+fi
+
+echo "pre-push: pushing to main — running typecheck and unit tests."
+echo "pre-push: (e2e and worker smoke need Postgres/Redis; CI runs those.)"
+
+if ! npm run typecheck; then
+  echo ""
+  echo "pre-push: typecheck FAILED — push aborted."
+  echo "pre-push: fix it, or bypass with SKIP_HOOKS=1 git push"
+  exit 1
+fi
+
+if ! npm test; then
+  echo ""
+  echo "pre-push: unit tests FAILED — push aborted."
+  echo "pre-push: fix it, or bypass with SKIP_HOOKS=1 git push"
+  exit 1
+fi
+
+echo "pre-push: checks passed."
+exit 0
