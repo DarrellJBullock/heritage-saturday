@@ -92,6 +92,12 @@ jobs:
     name: Docker images build and run
     runs-on: ubuntu-latest
 
+    env:
+      # Not a credential — a throwaway value so CI runs the containers in their real,
+      # locked configuration (api gated by the secret, web's proxy presenting it) rather
+      # than opting out with ALLOW_INSECURE_NO_API_KEY.
+      API_SHARED_SECRET: ci-not-a-real-secret
+
     # The api container needs a database to connect to. Runner services publish on
     # localhost, and the containers below use `--network host`, so they reach it there.
     services:
@@ -128,16 +134,20 @@ jobs:
             -e DATABASE_URL="$DATABASE_URL" \
             hs-api:ci npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
 
+      # The image sets NODE_ENV=production, so the api refuses to boot without the secret.
+      # Passing it here is what a real deployment does.
       - name: Start api container
         run: |
           docker run -d --name hs-api --network host \
             -e DATABASE_URL="$DATABASE_URL" \
+            -e API_SHARED_SECRET="$API_SHARED_SECRET" \
             hs-api:ci
 
       - name: Probe the api container
         run: |
           for i in $(seq 1 45); do
-            if curl -sf -o /dev/null http://localhost:3001/imports -H 'x-user-id: qa-user-a'; then
+            if curl -sf -o /dev/null http://localhost:3001/imports \
+                 -H "x-api-key: $API_SHARED_SECRET" -H 'x-user-id: qa-user-a'; then
               echo "api container is serving"; exit 0
             fi
             if [ "$(docker inspect -f '{{.State.Running}}' hs-api)" != "true" ]; then
@@ -147,12 +157,32 @@ jobs:
           done
           echo "api container never became ready:"; docker logs hs-api; exit 1
 
+      # The auth stub trusts x-user-id, so the shared-secret gate is the only thing keeping
+      # a reachable api from being wide open. Prove it is actually on.
+      - name: The api rejects callers without the shared secret
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/imports \
+                   -H 'x-user-id: qa-user-a')
+          echo "GET /imports without x-api-key -> $code"
+          [ "$code" = "401" ] || { echo "expected 401, api is unprotected"; docker logs hs-api; exit 1; }
+
+      # A production image with no secret and no explicit opt-out must fail to start.
+      - name: The api refuses to boot unprotected in production
+        run: |
+          if docker run --rm --network host -e DATABASE_URL="$DATABASE_URL" hs-api:ci; then
+            echo "api booted without API_SHARED_SECRET — fail-closed guard is broken"; exit 1
+          fi
+          echo "api correctly refused to start"
+
       # API_URL is the server-side base for Server Components. On --network host the
       # runner's localhost is the api container's, so host.docker.internal is unnecessary.
+      # API_SHARED_SECRET is what lets both server-side paths — Server Components and the
+      # /api/proxy route — get past the api's gate. Neither is NEXT_PUBLIC_*.
       - name: Start web container
         run: |
           docker run -d --name hs-web --network host \
             -e API_URL=http://localhost:3001 \
+            -e API_SHARED_SECRET="$API_SHARED_SECRET" \
             hs-web:ci
 
       - name: Probe the web container, including a Server Component that fetches the API
@@ -166,9 +196,19 @@ jobs:
           done
           curl -sf -o /dev/null http://localhost:3000/ || { docker logs hs-web; exit 1; }
           # /imports is a Server Component that fetches the API server-side. A 200 here
-          # proves the container reached the API, which a static page would not.
+          # proves the container reached the API *and* presented the shared secret, which a
+          # static page would not.
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/imports)
           echo "GET /imports -> $code"
+          [ "$code" = "200" ] || { docker logs hs-web; docker logs hs-api; exit 1; }
+
+      # Every browser request now goes through this route — it is the only way the client
+      # reaches the api. It must attach both the shared secret and the user identity, so a
+      # request carrying neither still succeeds.
+      - name: Probe the web proxy route, the browser's only path to the api
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/proxy/imports)
+          echo "GET /api/proxy/imports -> $code"
           [ "$code" = "200" ] || { docker logs hs-web; docker logs hs-api; exit 1; }
 
       - name: Container logs

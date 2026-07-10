@@ -5,6 +5,7 @@
   "scripts": {
     "build": "nest build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "prisma:generate": "prisma generate",

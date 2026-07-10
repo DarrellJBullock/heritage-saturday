@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the example carries no secrets and is the only place API_SHARED_SECRET and
+# API_URL are documented for a new checkout. apps/api/.env.example is tracked too.
+!.env.example
 
 # vercel
 .vercel

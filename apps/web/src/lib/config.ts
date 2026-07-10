@@ -4,24 +4,36 @@
 /**
  * The API lives at a different address depending on who is asking.
  *
- * The browser always reaches it over the host's published port, so
- * NEXT_PUBLIC_API_URL is baked into the client bundle at build time.
+ * The browser never reaches the API directly — it calls this app's own `/api/proxy/*`
+ * route on the same origin. So there is no build-time API address in the client bundle,
+ * and no NEXT_PUBLIC_API_URL: a same-origin relative path works from any host.
  *
- * Server Components fetch it from wherever Next itself is running. On the host
- * that is the same localhost. Inside the `web` container it is NOT: `localhost`
- * there is the container. `API_URL` overrides the base for server-side fetches
- * only — docker-compose sets it to host.docker.internal so SSR can reach the API
- * still running on the host. It is deliberately not NEXT_PUBLIC_*: a
- * container-internal hostname must never be baked into the client bundle.
+ * Server Components fetch it from wherever Next itself is running. On the host that is
+ * localhost. Inside the `web` container it is NOT: `localhost` there is the container.
+ * `API_URL` sets the base for server-side fetches — docker-compose points it at
+ * host.docker.internal so SSR can reach an API still running on the host. It is read at
+ * runtime and deliberately not NEXT_PUBLIC_*: it is paired with API_SHARED_SECRET, and a
+ * container-internal hostname must never be baked into a client bundle either.
  *
- * Both default to localhost:3001, so running everything on the host needs no env
- * at all.
+ * It defaults to localhost:3001, so running everything on the host needs no env at all.
  */
-const isServer = typeof window === 'undefined';
+export const IS_SERVER = typeof window === 'undefined';
 
-export const API_BASE_URL = isServer
-  ? process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
-  : process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+/**
+ * The browser NEVER calls the API directly. The API's auth stub trusts an `x-user-id`
+ * header, so a public deployment gates it behind `API_SHARED_SECRET` — a secret that cannot
+ * live in a client bundle. Browser requests go to this app's own `/api/proxy/*` route, which
+ * attaches the secret server-side.
+ *
+ * Server Components already run on the server, so they call the API directly and hold the
+ * secret themselves. `API_URL` is read at runtime and is deliberately not NEXT_PUBLIC_*.
+ */
+export const API_BASE_URL = IS_SERVER
+  ? process.env.API_URL ?? 'http://localhost:3001'
+  : '/api/proxy';
+
+/** Server-only. Never referenced in a browser code path — see api-client's IS_SERVER guard. */
+export const API_SHARED_SECRET = IS_SERVER ? process.env.API_SHARED_SECRET : undefined;
 
 /**
  * AUTH SEAM — NOT real auth.

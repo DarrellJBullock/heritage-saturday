@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-test",
+    "rootDir": ".",
+    "incremental": false
+  },
+  // Only the auth middleware and its test. Deliberately NOT all of `src`: the rest of the
+  // API imports @prisma/client, whose types exist only after `prisma generate`. Keeping this
+  // narrow lets `npm test` run without a generated client or a database.
+  "include": ["src/common/auth", "test/*.test.ts"]
+}
