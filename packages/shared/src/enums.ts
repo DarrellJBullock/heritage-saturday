@@ -27,6 +27,11 @@ export const REQUIRED_STARTING_POSITIONS: Position[] = [
   'K', 'P',
 ];
 
+// Team counts a league can be created with (Capability 2). The template presets generate
+// exactly this many teams; an imported league records the intended size.
+export const LEAGUE_SIZES = [8, 16, 24, 54] as const;
+export type LeagueSize = (typeof LEAGUE_SIZES)[number];
+
 export const OFFENSIVE_ARCHETYPES = [
   'BALANCED', 'POWER_RUN', 'SPREAD', 'VERTICAL_PASSING',
   'WEST_COAST', 'OPTION_RPO', 'PLAY_ACTION_HEAVY',

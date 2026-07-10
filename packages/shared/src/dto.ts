@@ -9,7 +9,35 @@ import {
   DefensiveArchetype,
   GameStatus,
   Position,
+  LeagueSize,
 } from './enums';
+
+// ---------------------------------------------------------------------------
+// Leagues (Capability 2)
+// ---------------------------------------------------------------------------
+
+export interface CreateLeagueRequestDto {
+  name: string;
+  size: LeagueSize;
+  // Omit for an empty league populated by import; set to a preset key to generate teams
+  // (wired in a later phase). templateKey and generation are validated server-side.
+  templateKey?: string;
+  // Optional deterministic generation seed; the server generates one when absent.
+  seed?: string;
+}
+
+export interface LeagueListItemDto {
+  id: string;
+  name: string;
+  size: number;
+  templateKey: string | null;
+  teamCount: number;
+  createdAt: string;
+}
+
+export interface LeagueDetailDto extends LeagueListItemDto {
+  rosters: RosterListItemDto[];
+}
 
 // ---------------------------------------------------------------------------
 // Imports

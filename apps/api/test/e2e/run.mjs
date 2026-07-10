@@ -22,6 +22,12 @@ const BASE = process.env.API_BASE ?? 'http://localhost:3001';
 const USER_A = 'qa-user-a';
 const USER_B = 'qa-user-b';
 
+// Capability 2: every roster/import/game is nested under a league. Each user gets a fresh league
+// created at the start of main(); imports and games are addressed under it.
+let LEAGUE_A = null;
+let LEAGUE_B = null;
+const leagueOf = (user) => (user === USER_B ? LEAGUE_B : LEAGUE_A);
+
 // apps/web, if it is running. The proxy section below needs it; everything else drives the API
 // directly. Unset, that section is skipped — except under CI, where it is mandatory (a security
 // check that silently stops running is worse than no check at all).
@@ -129,14 +135,15 @@ async function signInAsDevUser() {
 }
 
 async function uploadAndCommit(user, fixtureName, label) {
+  const lg = leagueOf(user);
   const buf = readFixture(fixtureName);
-  const upload = await api('POST', '/imports/roster', { user, file: buf, fileName: fixtureName });
+  const upload = await api('POST', `/leagues/${lg}/imports/roster`, { user, file: buf, fileName: fixtureName });
   if (upload.status !== 201) {
     return { upload };
   }
   const importId = upload.body.importId;
-  const preview = await api('GET', `/imports/${importId}/preview`, { user });
-  const commit = await api('POST', `/imports/${importId}/commit`, { user });
+  const preview = await api('GET', `/leagues/${lg}/imports/${importId}/preview`, { user });
+  const commit = await api('POST', `/leagues/${lg}/imports/${importId}/commit`, { user });
   return { upload, preview, commit, importId };
 }
 
@@ -211,14 +218,36 @@ async function proxyIdentitySection(rosterIdA, importIdA) {
   ok('forged x-user-id gets 404 reading user A\'s roster through the proxy',
     spoofedRoster.status === 404, spoofedRoster.body);
 
-  const spoofedImport = await web(`/api/proxy/imports/${importIdA}/preview`, { jar, headers: forged });
+  const spoofedImport = await web(`/api/proxy/leagues/${LEAGUE_A}/imports/${importIdA}/preview`, { jar, headers: forged });
   ok('forged x-user-id gets 404 reading user A\'s import preview through the proxy',
     spoofedImport.status === 404, spoofedImport.body);
 }
 
 async function main() {
-  console.log(`Heritage Saturday Capability 1 QA suite — API base: ${BASE}`);
+  console.log(`Heritage Saturday QA suite — API base: ${BASE}`);
   console.log(`  apps/web base: ${WEB ?? '(not set — proxy identity checks skipped)'}`);
+
+  // -------------------------------------------------------------------
+  section('Capability 2 — leagues: create + list, and every roster/game nests under one');
+  // -------------------------------------------------------------------
+  const leagueA = await api('POST', '/leagues', { user: USER_A, body: { name: 'Test League A', size: 8 } });
+  ok('POST /leagues creates a league (201) with an id', leagueA.status === 201 && !!leagueA.body.id, leagueA.body);
+  ok('a new league reports zero teams', leagueA.body.teamCount === 0, leagueA.body);
+  LEAGUE_A = leagueA.body.id;
+
+  const leagueB = await api('POST', '/leagues', { user: USER_B, body: { name: 'Test League B', size: 8 } });
+  ok('a second user can create their own league', leagueB.status === 201 && !!leagueB.body.id, leagueB.body);
+  LEAGUE_B = leagueB.body.id;
+
+  const badSize = await api('POST', '/leagues', { user: USER_A, body: { name: 'Bad', size: 7 } });
+  ok('a non-preset size is rejected (400)', badSize.status === 400, badSize.body);
+
+  const listA = await api('GET', '/leagues', { user: USER_A });
+  ok('GET /leagues lists the caller\'s league', listA.status === 200 && listA.body.some((l) => l.id === LEAGUE_A), listA.body);
+  ok('GET /leagues does not leak another user\'s league', !listA.body.some((l) => l.id === LEAGUE_B), listA.body);
+
+  const leagueBAsA = await api('GET', `/leagues/${LEAGUE_B}`, { user: USER_A });
+  ok('reading another user\'s league detail is 404 (not 403)', leagueBAsA.status === 404, leagueBAsA.body);
 
   // -------------------------------------------------------------------
   section('Story 1.1 / 1.5 / 1.8 — valid CSV import: preview + commit + history');
@@ -237,7 +266,7 @@ async function main() {
     validCsv.commit.body.summary.created === expectedCreated, validCsv.commit.body.summary);
   const rosterIdA = validCsv.commit.body.rosterId;
 
-  const history = await api('GET', '/imports', { user: USER_A });
+  const history = await api('GET', `/leagues/${LEAGUE_A}/imports`, { user: USER_A });
   ok('import history lists the import with fileName/date/summary', history.status === 200 &&
       history.body.some((i) => i.importId === validCsv.importId && i.fileName === 'valid-roster.csv' && i.summary.created === expectedCreated),
     history.body);
@@ -295,10 +324,10 @@ async function main() {
   // -------------------------------------------------------------------
   section('Story 1.7 — unsupported extension / corrupt content -> top-level error, no partial import');
   // -------------------------------------------------------------------
-  const unsupported = await api('POST', '/imports/roster', { user: USER_A, file: readFixture('unsupported.txt'), fileName: 'unsupported.txt' });
+  const unsupported = await api('POST', `/leagues/${LEAGUE_A}/imports/roster`, { user: USER_A, file: readFixture('unsupported.txt'), fileName: 'unsupported.txt' });
   ok('unsupported extension returns 422 with topLevelError', unsupported.status === 422 && !!unsupported.body.detail?.topLevelError, unsupported.body);
   const rostersBeforeCorrupt = await api('GET', '/rosters', { user: USER_A });
-  const corrupt = await api('POST', '/imports/roster', { user: USER_A, file: readFixture('corrupt.xlsx'), fileName: 'corrupt.xlsx' });
+  const corrupt = await api('POST', `/leagues/${LEAGUE_A}/imports/roster`, { user: USER_A, file: readFixture('corrupt.xlsx'), fileName: 'corrupt.xlsx' });
   // SheetJS's XLSX.read() parses arbitrary bytes without throwing, so parseXlsx guards on
   // "at least one recognized roster sheet carrying at least one data row" — otherwise garbage
   // would land as a silently-successful empty import. Story 1 AC7.
@@ -512,7 +541,9 @@ async function main() {
   // -------------------------------------------------------------------
   section('Story 1.6 / architecture §8 — private-by-default ownership, cross-user isolation');
   // -------------------------------------------------------------------
-  const previewAsB = await api('GET', `/imports/${validCsv.importId}/preview`, { user: USER_B });
+  // USER_B reaches for USER_A's import through USER_A's league — the league guard 404s before
+  // the import is even resolved, which is the isolation we want.
+  const previewAsB = await api('GET', `/leagues/${LEAGUE_A}/imports/${validCsv.importId}/preview`, { user: USER_B });
   ok('user B gets 404 (not data, not 403) reading user A\'s import', previewAsB.status === 404, previewAsB.body);
 
   const rosterDetailAsB = await api('GET', `/rosters/${rosterIdA}`, { user: USER_B });
@@ -552,7 +583,7 @@ async function main() {
   const dcB = await api('GET', `/depth-charts/${teamB.id}`, { user: USER_A });
   ok('depth chart auto-generates for team B with all required starting positions filled', dcB.status === 200 && dcB.body.warnings.length === 0, dcB.body);
 
-  const sameTeamTwice = await api('POST', '/games/simulate', {
+  const sameTeamTwice = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
     user: USER_A,
     body: {
       homeTeamId: teamA.id, awayTeamId: teamA.id,
@@ -568,7 +599,7 @@ async function main() {
   const unfillableRosterDetail = await api('GET', `/rosters/${unfillable.commit.body.rosterId}`, { user: USER_A });
   const unfillableTeamId = unfillableRosterDetail.body.teams[0]?.id;
   if (unfillableTeamId) {
-    const unfillableSim = await api('POST', '/games/simulate', {
+    const unfillableSim = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
       user: USER_A,
       body: {
         homeTeamId: unfillableTeamId, awayTeamId: teamA.id,
@@ -584,7 +615,7 @@ async function main() {
     ok('(setup) could resolve unfillable team id', false, unfillableRosterDetail.body);
   }
 
-  const invalidArchetype = await api('POST', '/games/simulate', {
+  const invalidArchetype = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
     user: USER_A,
     body: {
       homeTeamId: teamA.id, awayTeamId: teamB.id,
@@ -594,7 +625,7 @@ async function main() {
   });
   ok('invalid archetype value rejected (400)', invalidArchetype.status === 400, invalidArchetype.body);
 
-  const runGame = await api('POST', '/games/simulate', {
+  const runGame = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
     user: USER_A,
     body: {
       homeTeamId: teamA.id, awayTeamId: teamB.id,
@@ -607,7 +638,7 @@ async function main() {
   const gameId1 = runGame.body.gameId;
 
   // Cross-user ownership on games/simulate: user B must not be able to use user A's teams
-  const crossOwnerSim = await api('POST', '/games/simulate', {
+  const crossOwnerSim = await api('POST', `/leagues/${LEAGUE_B}/games/simulate`, {
     user: USER_B,
     body: {
       homeTeamId: teamA.id, awayTeamId: teamB.id,
@@ -620,7 +651,7 @@ async function main() {
   // -------------------------------------------------------------------
   section('Story 2.5 / Determinism — repeated seed => identical result; different seed => different result');
   // -------------------------------------------------------------------
-  const runGameRepeat = await api('POST', '/games/simulate', {
+  const runGameRepeat = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
     user: USER_A,
     body: {
       homeTeamId: teamA.id, awayTeamId: teamB.id,
@@ -632,8 +663,8 @@ async function main() {
   const gameId2 = runGameRepeat.body.gameId;
   ok('repeat run with same seed succeeds', runGameRepeat.status === 201, runGameRepeat.body);
 
-  const box1 = await api('GET', `/games/${gameId1}/box-score`, { user: USER_A });
-  const box2 = await api('GET', `/games/${gameId2}/box-score`, { user: USER_A });
+  const box1 = await api('GET', `/leagues/${LEAGUE_A}/games/${gameId1}/box-score`, { user: USER_A });
+  const box2 = await api('GET', `/leagues/${LEAGUE_A}/games/${gameId2}/box-score`, { user: USER_A });
 
   function normalizeForCompare(b) {
     if (!b) return null;
@@ -653,7 +684,7 @@ async function main() {
   ok('same seed produces identical full per-player stat line', JSON.stringify(sortedPlayerStats(norm1?.playerStats)) === JSON.stringify(sortedPlayerStats(norm2?.playerStats)),
     { a: sortedPlayerStats(norm1?.playerStats), b: sortedPlayerStats(norm2?.playerStats) });
 
-  const runGameDiffSeed = await api('POST', '/games/simulate', {
+  const runGameDiffSeed = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
     user: USER_A,
     body: {
       homeTeamId: teamA.id, awayTeamId: teamB.id,
@@ -662,7 +693,7 @@ async function main() {
       seed: 'qa-different-seed-002',
     },
   });
-  const box3 = await api('GET', `/games/${runGameDiffSeed.body.gameId}/box-score`, { user: USER_A });
+  const box3 = await api('GET', `/leagues/${LEAGUE_A}/games/${runGameDiffSeed.body.gameId}/box-score`, { user: USER_A });
   const different = JSON.stringify(box1.body.finalScore) !== JSON.stringify(box3.body.finalScore) ||
     JSON.stringify(box1.body.quarterByQuarter) !== JSON.stringify(box3.body.quarterByQuarter) ||
     JSON.stringify(box1.body.playerStats) !== JSON.stringify(box3.body.playerStats);
@@ -704,8 +735,8 @@ async function main() {
     // caveat — no list endpoint to directly assert row count without DB access).
     return null;
   };
-  const boxReloadA = await api('GET', `/games/${gameId1}/box-score`, { user: USER_A });
-  const boxReloadB = await api('GET', `/games/${gameId1}/box-score`, { user: USER_A });
+  const boxReloadA = await api('GET', `/leagues/${LEAGUE_A}/games/${gameId1}/box-score`, { user: USER_A });
+  const boxReloadB = await api('GET', `/leagues/${LEAGUE_A}/games/${gameId1}/box-score`, { user: USER_A });
   ok('reloading the box score route returns byte-identical JSON both times (no re-simulation drift)',
     JSON.stringify(boxReloadA.body) === JSON.stringify(boxReloadB.body), { a: boxReloadA.body, b: boxReloadB.body });
   ok('reloaded box score matches the originally-returned result exactly', JSON.stringify(boxReloadA.body) === JSON.stringify(box1.body));
@@ -721,10 +752,10 @@ async function main() {
   ok('box score away playerStats are ordered by playerId (deterministic serialization)',
     isSortedByPlayerId(boxReloadA.body.playerStats.away), boxReloadA.body.playerStats.away.map((s) => s.playerId));
 
-  const missingGame = await api('GET', `/games/does-not-exist/box-score`, { user: USER_A });
+  const missingGame = await api('GET', `/leagues/${LEAGUE_A}/games/does-not-exist/box-score`, { user: USER_A });
   ok('box score for nonexistent game returns 404', missingGame.status === 404, missingGame.body);
 
-  const boxAsB = await api('GET', `/games/${gameId1}/box-score`, { user: USER_B });
+  const boxAsB = await api('GET', `/leagues/${LEAGUE_A}/games/${gameId1}/box-score`, { user: USER_B });
   ok('user B cannot read user A\'s box score (404)', boxAsB.status === 404, boxAsB.body);
 
   // -------------------------------------------------------------------

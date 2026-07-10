@@ -24,7 +24,11 @@ export interface UploadedFile {
 export class ImportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async uploadRoster(file: UploadedFile, ownerId: string): Promise<UploadRosterResponseDto> {
+  async uploadRoster(
+    file: UploadedFile,
+    ownerId: string,
+    leagueId: string,
+  ): Promise<UploadRosterResponseDto> {
     const format = detectFormat(file.originalname, file.mimetype);
     if (!format) {
       throw new DomainException(422, 'UNSUPPORTED_FILE_FORMAT', 'Unrecognized file format', {
@@ -40,6 +44,7 @@ export class ImportsService {
       await this.prisma.rosterImport.create({
         data: {
           userId: ownerId,
+          leagueId,
           fileName: file.originalname,
           fileFormat: format,
           status: 'FAILED',
@@ -54,6 +59,7 @@ export class ImportsService {
     const roImport = await this.prisma.rosterImport.create({
       data: {
         userId: ownerId,
+        leagueId,
         fileName: file.originalname,
         fileFormat: format,
         status: 'PENDING',
@@ -73,12 +79,12 @@ export class ImportsService {
     return { importId: roImport.id, status: 'PENDING', topLevelError: null };
   }
 
-  async preview(importId: string): Promise<ImportPreviewResponseDto> {
+  async preview(importId: string, leagueId: string): Promise<ImportPreviewResponseDto> {
     const roImport = await this.prisma.rosterImport.findUnique({
       where: { id: importId },
       include: { rows: true },
     });
-    if (!roImport) {
+    if (!roImport || roImport.leagueId !== leagueId) {
       throw new DomainException(404, 'NOT_FOUND', 'Import not found');
     }
 
@@ -101,9 +107,9 @@ export class ImportsService {
     };
   }
 
-  async listForOwner(ownerId: string): Promise<ImportHistoryItemDto[]> {
+  async listForLeague(leagueId: string): Promise<ImportHistoryItemDto[]> {
     const imports = await this.prisma.rosterImport.findMany({
-      where: { userId: ownerId },
+      where: { leagueId },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -121,12 +127,17 @@ export class ImportsService {
     }));
   }
 
-  async commit(importId: string, ownerId: string): Promise<CommitImportResponseDto> {
+  async commit(importId: string, ownerId: string, leagueId: string): Promise<CommitImportResponseDto> {
     const roImport = await this.prisma.rosterImport.findUnique({
       where: { id: importId },
       include: { rows: true },
     });
     if (!roImport) {
+      throw new DomainException(404, 'NOT_FOUND', 'Import not found');
+    }
+    // The import is addressed through a league in the route; it must actually belong to it.
+    // 404, not 403, to avoid revealing that the import exists under another league.
+    if (roImport.leagueId !== leagueId) {
       throw new DomainException(404, 'NOT_FOUND', 'Import not found');
     }
     if (roImport.status === 'COMMITTED') {
@@ -154,6 +165,7 @@ export class ImportsService {
       const roster = await tx.roster.create({
         data: {
           ownerId,
+          leagueId: roImport.leagueId,
           name: roImport.fileName,
           visibility: 'PRIVATE',
           sourceImportId: roImport.id,
