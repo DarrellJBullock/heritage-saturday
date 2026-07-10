@@ -1,0 +1,351 @@
+// Heritage Saturday — Prisma schema, Capability 1 (Roster Import + Basic Game Simulation)
+// Source of truth: company-docs/architecture.md §3. See that doc for schema rationale,
+// ownership-index reasoning, and forward-compatibility notes.
+//
+// Engine: PostgreSQL. ORM: Prisma. This is the only database/ORM combination used in
+// apps/api per company-docs/architecture.md and company-docs/vision.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Visibility {
+  PRIVATE
+  // LEAGUE, SHARED_LINK, PUBLIC_TEMPLATE reserved for later capabilities — not used yet
+}
+
+enum ImportRowStatus {
+  OK
+  WARNING
+  ERROR
+}
+
+enum ImportStatus {
+  PENDING // uploaded, parsed, not yet committed
+  COMMITTED
+  FAILED // top-level parse failure, no rows created
+}
+
+enum Position {
+  QB
+  RB
+  FB
+  WR
+  TE
+  LT
+  LG
+  C
+  RG
+  RT
+  LE
+  RE
+  DT
+  LOLB
+  MLB
+  ROLB
+  CB
+  FS
+  SS
+  K
+  P
+  KR
+  PR
+}
+
+enum OffensiveArchetype {
+  BALANCED
+  POWER_RUN
+  SPREAD
+  VERTICAL_PASSING
+  WEST_COAST
+  OPTION_RPO
+  PLAY_ACTION_HEAVY
+}
+
+enum DefensiveArchetype {
+  BALANCED_4_3
+  BASE_3_4
+  NICKEL_ZONE
+  BLITZ_HEAVY
+  MAN_COVERAGE
+  BEND_DONT_BREAK
+  RUN_STOP
+}
+
+enum GameStatus {
+  PENDING // created, not yet run (not really used since Cap 1 runs immediately)
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+
+  rosters Roster[]
+  imports RosterImport[]
+  games   Game[]
+}
+
+model RosterImport {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+  fileName      String
+  fileFormat    String // csv | json | xlsx | xls
+  status        ImportStatus @default(PENDING)
+  createdCount  Int          @default(0)
+  updatedCount  Int          @default(0)
+  skippedCount  Int          @default(0)
+  failedCount   Int          @default(0)
+  topLevelError String? // set if file was corrupt/unparseable
+  createdAt     DateTime     @default(now())
+  committedAt   DateTime?
+
+  rows   RosterImportRow[]
+  roster Roster? // set once committed (back-relation of Roster.sourceImport)
+
+  @@index([userId, createdAt])
+}
+
+model RosterImportRow {
+  id          String          @id @default(cuid())
+  importId    String
+  import      RosterImport    @relation(fields: [importId], references: [id])
+  sheet       String // players | teams | coaches | depthchart | headshots | bands | rivalries
+  rowIndex    Int
+  rawData     Json // original parsed row, for audit/debug
+  status      ImportRowStatus
+  messages    String[] // human-readable validation messages
+  entityRefId String? // player_id/team_id/coach_id as given in the sheet, for dup-checking
+
+  @@index([importId, sheet, status])
+}
+
+model Roster {
+  id             String        @id @default(cuid())
+  ownerId        String
+  owner          User          @relation(fields: [ownerId], references: [id])
+  name           String
+  visibility     Visibility    @default(PRIVATE)
+  sourceImportId String?       @unique
+  sourceImport   RosterImport? @relation(fields: [sourceImportId], references: [id])
+  createdAt      DateTime      @default(now())
+
+  teams Team[]
+
+  @@index([ownerId])
+}
+
+model Team {
+  id             String  @id @default(cuid())
+  rosterId       String
+  roster         Roster  @relation(fields: [rosterId], references: [id])
+  externalTeamId String // team_id from the sheet, unique within a roster
+  teamName       String
+  abbreviation   String?
+  city           String?
+  state          String?
+  conference     String?
+  division       String?
+  coachName      String? // denormalized display field; Coach entity is separate
+  // color/branding fields stored but unused by any Cap-1 screen
+  primaryColor   String?
+  secondaryColor String?
+
+  players    Player[]
+  coach      Coach?
+  depthChart DepthChart[]
+  homeGames  Game[]       @relation("HomeTeam")
+  awayGames  Game[]       @relation("AwayTeam")
+
+  teamGameStats TeamGameStats[]
+
+  @@unique([rosterId, externalTeamId])
+  @@index([rosterId])
+}
+
+model Player {
+  id               String   @id @default(cuid())
+  teamId           String
+  team             Team     @relation(fields: [teamId], references: [id])
+  externalPlayerId String // player_id from sheet, unique within roster
+  firstName        String
+  lastName         String
+  position         Position
+  jerseyNumber     Int
+  archetype        String?
+  overallRating    Int // 0-99
+  speed            Int?
+  strength         Int?
+  awareness        Int?
+  throwPower       Int?
+  throwAccuracy    Int?
+  catching         Int?
+  routeRunning     Int?
+  carry            Int?
+  trucking         Int?
+  passBlock        Int?
+  runBlock         Int?
+  tackle           Int?
+  coverage         Int?
+  kickPower        Int?
+  kickAccuracy     Int?
+  // headshot fields stored if present, unused in Cap 1
+  headshotUrl      String?
+  headshotFileName String?
+  portraitPath     String?
+
+  depthChartEntries DepthChartEntry[]
+  gameStats         PlayerGameStats[]
+
+  @@unique([teamId, externalPlayerId])
+  @@unique([teamId, jerseyNumber])
+  @@index([teamId, position])
+}
+
+model Coach {
+  id              String  @id @default(cuid())
+  teamId          String  @unique
+  team            Team    @relation(fields: [teamId], references: [id])
+  externalCoachId String
+  firstName       String
+  lastName        String
+  offensiveStyle  String?
+  defensiveStyle  String?
+  aggression      Int?
+  discipline      Int?
+  development     Int?
+  gameManagement  Int?
+}
+
+model DepthChart {
+  id          String   @id @default(cuid())
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id])
+  source      String // IMPORTED | AUTO_GENERATED
+  generatedAt DateTime @default(now())
+
+  entries DepthChartEntry[]
+
+  @@index([teamId])
+}
+
+model DepthChartEntry {
+  id           String     @id @default(cuid())
+  depthChartId String
+  depthChart   DepthChart @relation(fields: [depthChartId], references: [id])
+  position     Position
+  slot         Int // 0 = starter, 1..3 = backups
+  playerId     String
+  player       Player     @relation(fields: [playerId], references: [id])
+
+  @@unique([depthChartId, position, slot])
+}
+
+model Game {
+  id               String             @id @default(cuid())
+  ownerId          String
+  owner            User               @relation(fields: [ownerId], references: [id])
+  homeTeamId       String
+  homeTeam         Team               @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId       String
+  awayTeam         Team               @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  homeOffArchetype OffensiveArchetype
+  homeDefArchetype DefensiveArchetype
+  awayOffArchetype OffensiveArchetype
+  awayDefArchetype DefensiveArchetype
+  seed             String // string so it can be user-supplied or generated (e.g. uuid/int as string)
+  rulesetVersion   String             @default("v0")
+  status           GameStatus         @default(PENDING)
+  homeScore        Int?
+  awayScore        Int?
+  createdAt        DateTime           @default(now())
+  completedAt      DateTime?
+
+  events      GameEvent[]
+  teamStats   TeamGameStats[]
+  playerStats PlayerGameStats[]
+
+  @@index([ownerId, createdAt])
+}
+
+model GameEvent {
+  id       String  @id @default(cuid())
+  gameId   String
+  game     Game    @relation(fields: [gameId], references: [id])
+  quarter  Int // 1-4, 5 = OT
+  sequence Int // order within the game
+  type     String // SCORE | TURNOVER | PUNT | DRIVE_END | ... (engine-defined, not a fixed enum yet)
+  teamId   String?
+  payload  Json // engine-specific detail, not directly rendered in Cap 1 UI
+
+  @@unique([gameId, sequence])
+  @@index([gameId, quarter])
+}
+
+model TeamGameStats {
+  id                      String @id @default(cuid())
+  gameId                  String
+  game                    Game   @relation(fields: [gameId], references: [id])
+  teamId                  String
+  team                    Team   @relation(fields: [teamId], references: [id])
+  q1                      Int    @default(0)
+  q2                      Int    @default(0)
+  q3                      Int    @default(0)
+  q4                      Int    @default(0)
+  ot                      Int    @default(0)
+  totalYards              Int    @default(0)
+  passingYards            Int    @default(0)
+  rushingYards            Int    @default(0)
+  turnovers               Int    @default(0)
+  timeOfPossessionSeconds Int? // nullable per Open Question #3; may be dropped
+
+  @@unique([gameId, teamId])
+}
+
+model PlayerGameStats {
+  id       String @id @default(cuid())
+  gameId   String
+  game     Game   @relation(fields: [gameId], references: [id])
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id])
+  teamId   String
+
+  passAttempts     Int?
+  passCompletions  Int?
+  passYards        Int?
+  passTDs          Int?
+  interceptions    Int?
+  carries          Int?
+  rushYards        Int?
+  rushTDs          Int?
+  targets          Int?
+  receptions       Int?
+  receivingYards   Int?
+  receivingTDs     Int?
+  tackles          Int?
+  sacks            Int?
+  defInterceptions Int?
+  fgMade           Int?
+  fgAttempts       Int?
+  xpMade           Int?
+
+  @@unique([gameId, playerId])
+  @@index([gameId, teamId])
+}

@@ -1,0 +1,8 @@
+sheet,team_id,team_name,abbreviation,city,state,player_id,first_name,last_name,position,jersey_number,overall_rating,archetype,coach_id,slot
+teams,T1,Ridgeline Ramblers,RR,Ridgeline,CO,,,,,,,,,
+players,T1,,,,,T1-P1,Jax,Fenwick,QB,1,60,,,
+players,T1,,,,,T1-P2,Cory,Alder,RB,2,62,,,
+coaches,T1,,,,,,Ada,Marsh,,,,,C1,
+coaches,T9,,,,,,Rex,Holloway,,,,,C9,
+depthchart,T9,,,,,T9-P1,,,QB,,,,,0
+depthchart,T9,,,,,T9-P2,,,RB,,,,,0

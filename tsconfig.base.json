@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    // node16 resolution requires a matching node16 module mode. No package sets
+    // "type": "module", so every workspace here is still CommonJS and the emit is
+    // unchanged — this buys correct package.json "exports"/conditional resolution
+    // and drops the node10 mode that TypeScript 7 removes.
+    "module": "node16",
+    "lib": ["ES2021"],
+    "declaration": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node16",
+    "resolveJsonModule": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  }
+}

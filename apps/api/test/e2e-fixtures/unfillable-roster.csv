@@ -1,0 +1,4 @@
+sheet,team_id,team_name,abbreviation,city,state,player_id,first_name,last_name,position,jersey_number,overall_rating,archetype
+teams,T3,Sparrow Hollow Wardens,SHW,,,,,,,,,
+players,T3,,,,,T3-P1,Dex,Fenwick,QB,1,80,
+players,T3,,,,,T3-P2,Otis,Voss,RB,2,75,

@@ -1,0 +1,5 @@
+sheet,team_id,team_name,abbreviation,city,state,player_id,first_name,last_name,position,jersey_number,overall_rating,archetype
+teams,T1,Ridgeline Ramblers,RR,Ridgeline,CO,,,,,,,
+players,T1,,,,,T1-P1,Jax,Fenwick,QB,1,60,
+players,T1,,,,,T1-P2,Cory,Alder,RB,2,62,
+players,T9,,,,,T9-P1,Orin,Vance,WR,3,64,

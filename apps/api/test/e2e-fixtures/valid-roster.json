@@ -1,0 +1,420 @@
+{
+  "teams": [
+    {
+      "team_id": "T1",
+      "team_name": "Ridgeline Ramblers",
+      "abbreviation": "RR",
+      "city": "Ridgeline",
+      "state": "CO"
+    },
+    {
+      "team_id": "T2",
+      "team_name": "Cobalt Crest Coyotes",
+      "abbreviation": "CCC",
+      "city": "Cobalt Crest",
+      "state": "AZ"
+    }
+  ],
+  "players": [
+    {
+      "team_id": "T1",
+      "player_id": "T1-P1",
+      "first_name": "Jax",
+      "last_name": "Fenwick",
+      "position": "QB",
+      "jersey_number": 1,
+      "overall_rating": 60,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P2",
+      "first_name": "Marlon",
+      "last_name": "Okoro",
+      "position": "RB",
+      "jersey_number": 2,
+      "overall_rating": 61,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P3",
+      "first_name": "Dex",
+      "last_name": "Baptiste",
+      "position": "WR",
+      "jersey_number": 3,
+      "overall_rating": 62,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P4",
+      "first_name": "Corwin",
+      "last_name": "Voss",
+      "position": "TE",
+      "jersey_number": 4,
+      "overall_rating": 63,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P5",
+      "first_name": "Tobias",
+      "last_name": "Kettering",
+      "position": "LT",
+      "jersey_number": 5,
+      "overall_rating": 64,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P6",
+      "first_name": "Reggie",
+      "last_name": "Mbeki",
+      "position": "LG",
+      "jersey_number": 6,
+      "overall_rating": 65,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P7",
+      "first_name": "Vance",
+      "last_name": "Larkspur",
+      "position": "C",
+      "jersey_number": 7,
+      "overall_rating": 66,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P8",
+      "first_name": "Emil",
+      "last_name": "Donahue",
+      "position": "RG",
+      "jersey_number": 8,
+      "overall_rating": 67,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P9",
+      "first_name": "Otis",
+      "last_name": "Quillan",
+      "position": "RT",
+      "jersey_number": 9,
+      "overall_rating": 68,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P10",
+      "first_name": "Prescott",
+      "last_name": "Strand",
+      "position": "LE",
+      "jersey_number": 10,
+      "overall_rating": 69,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P11",
+      "first_name": "Lamar",
+      "last_name": "Whitlock",
+      "position": "RE",
+      "jersey_number": 11,
+      "overall_rating": 70,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P12",
+      "first_name": "Dashiell",
+      "last_name": "Zayas",
+      "position": "DT",
+      "jersey_number": 12,
+      "overall_rating": 71,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P13",
+      "first_name": "Grover",
+      "last_name": "Ferro",
+      "position": "LOLB",
+      "jersey_number": 13,
+      "overall_rating": 72,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P14",
+      "first_name": "Sully",
+      "last_name": "Hargrove",
+      "position": "MLB",
+      "jersey_number": 14,
+      "overall_rating": 73,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P15",
+      "first_name": "Wyn",
+      "last_name": "Blaylock",
+      "position": "ROLB",
+      "jersey_number": 15,
+      "overall_rating": 74,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P16",
+      "first_name": "Barrett",
+      "last_name": "Sandoval",
+      "position": "CB",
+      "jersey_number": 16,
+      "overall_rating": 75,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P17",
+      "first_name": "Cole",
+      "last_name": "Trent",
+      "position": "FS",
+      "jersey_number": 17,
+      "overall_rating": 76,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P18",
+      "first_name": "Finch",
+      "last_name": "Ashworth",
+      "position": "SS",
+      "jersey_number": 18,
+      "overall_rating": 77,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P19",
+      "first_name": "Roscoe",
+      "last_name": "Corbin",
+      "position": "K",
+      "jersey_number": 19,
+      "overall_rating": 78,
+      "archetype": ""
+    },
+    {
+      "team_id": "T1",
+      "player_id": "T1-P20",
+      "first_name": "Tate",
+      "last_name": "Delgado",
+      "position": "P",
+      "jersey_number": 20,
+      "overall_rating": 79,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P1",
+      "first_name": "Emil",
+      "last_name": "Donahue",
+      "position": "QB",
+      "jersey_number": 1,
+      "overall_rating": 60,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P2",
+      "first_name": "Otis",
+      "last_name": "Quillan",
+      "position": "RB",
+      "jersey_number": 2,
+      "overall_rating": 61,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P3",
+      "first_name": "Prescott",
+      "last_name": "Strand",
+      "position": "WR",
+      "jersey_number": 3,
+      "overall_rating": 62,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P4",
+      "first_name": "Lamar",
+      "last_name": "Whitlock",
+      "position": "TE",
+      "jersey_number": 4,
+      "overall_rating": 63,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P5",
+      "first_name": "Dashiell",
+      "last_name": "Zayas",
+      "position": "LT",
+      "jersey_number": 5,
+      "overall_rating": 64,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P6",
+      "first_name": "Grover",
+      "last_name": "Ferro",
+      "position": "LG",
+      "jersey_number": 6,
+      "overall_rating": 65,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P7",
+      "first_name": "Sully",
+      "last_name": "Hargrove",
+      "position": "C",
+      "jersey_number": 7,
+      "overall_rating": 66,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P8",
+      "first_name": "Wyn",
+      "last_name": "Blaylock",
+      "position": "RG",
+      "jersey_number": 8,
+      "overall_rating": 67,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P9",
+      "first_name": "Barrett",
+      "last_name": "Sandoval",
+      "position": "RT",
+      "jersey_number": 9,
+      "overall_rating": 68,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P10",
+      "first_name": "Cole",
+      "last_name": "Trent",
+      "position": "LE",
+      "jersey_number": 10,
+      "overall_rating": 69,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P11",
+      "first_name": "Finch",
+      "last_name": "Ashworth",
+      "position": "RE",
+      "jersey_number": 11,
+      "overall_rating": 70,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P12",
+      "first_name": "Roscoe",
+      "last_name": "Corbin",
+      "position": "DT",
+      "jersey_number": 12,
+      "overall_rating": 71,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P13",
+      "first_name": "Tate",
+      "last_name": "Delgado",
+      "position": "LOLB",
+      "jersey_number": 13,
+      "overall_rating": 72,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P14",
+      "first_name": "Jax",
+      "last_name": "Fenwick",
+      "position": "MLB",
+      "jersey_number": 14,
+      "overall_rating": 73,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P15",
+      "first_name": "Marlon",
+      "last_name": "Okoro",
+      "position": "ROLB",
+      "jersey_number": 15,
+      "overall_rating": 74,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P16",
+      "first_name": "Dex",
+      "last_name": "Baptiste",
+      "position": "CB",
+      "jersey_number": 16,
+      "overall_rating": 75,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P17",
+      "first_name": "Corwin",
+      "last_name": "Voss",
+      "position": "FS",
+      "jersey_number": 17,
+      "overall_rating": 76,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P18",
+      "first_name": "Tobias",
+      "last_name": "Kettering",
+      "position": "SS",
+      "jersey_number": 18,
+      "overall_rating": 77,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P19",
+      "first_name": "Reggie",
+      "last_name": "Mbeki",
+      "position": "K",
+      "jersey_number": 19,
+      "overall_rating": 78,
+      "archetype": ""
+    },
+    {
+      "team_id": "T2",
+      "player_id": "T2-P20",
+      "first_name": "Vance",
+      "last_name": "Larkspur",
+      "position": "P",
+      "jersey_number": 20,
+      "overall_rating": 79,
+      "archetype": ""
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+# Heritage Saturday — local development infrastructure
+# Scope: Capability 1 (roster import + basic game simulation) per company-docs/architecture.md.
+# apps/worker and apps/web are not scaffolded yet, so no worker/web/api services are defined
+# here yet — see docs/dev-setup.md for the plan to add them.
+#
+# Cloud provider / IaC: none — this is local-only Docker Compose, not a cloud deployment.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: heritage-saturday-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: heritage
+      POSTGRES_PASSWORD: heritage
+      POSTGRES_DB: heritage_saturday
+    ports:
+      # Host port 5433, not 5432: many dev machines already run a local Postgres on 5432,
+      # which silently shadows Docker's port-forward on 127.0.0.1/::1 (hit while standing
+      # this up in this environment). Container-internal port stays 5432; only the host
+      # mapping differs. Update DATABASE_URL if you change this.
+      - "5433:5432"
+    volumes:
+      - heritage_saturday_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heritage -d heritage_saturday"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: heritage-saturday-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - heritage_saturday_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # NOTE: apps/api does not yet have a Dockerfile (it currently runs via `nest start` on the
+  # host, against this compose stack's postgres/redis over localhost ports). An `api` service
+  # is intentionally NOT defined yet so `docker compose up postgres redis` never fails due to
+  # a missing build context. Add it here (with a `build: { context: ., dockerfile: apps/api/Dockerfile }`)
+  # once a Dockerfile exists and apps/worker/apps/web are scaffolded — see docs/dev-setup.md.
+
+volumes:
+  heritage_saturday_postgres_data:
+  heritage_saturday_redis_data:

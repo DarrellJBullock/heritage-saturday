@@ -1,0 +1,633 @@
+// Heritage Saturday — Capability 1 QA end-to-end suite.
+// Drives the real HTTP API (must be running, default http://localhost:3001)
+// against the real Postgres DB. Not a Jest/pytest suite — plain Node script
+// using built-in fetch, chosen because there is no existing e2e test harness
+// wired up in apps/api yet (only unit tests exist in packages/*).
+//
+// Prereqs: API running, DB migrated, and two User rows seeded:
+//   qa-user-a, qa-user-b (see QA report for the seed SQL used).
+//
+// Usage: node apps/api/test/e2e/run.mjs
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const BASE = process.env.API_BASE ?? 'http://localhost:3001';
+const USER_A = 'qa-user-a';
+const USER_B = 'qa-user-b';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURES = path.join(__dirname, '..', 'e2e-fixtures');
+
+let pass = 0;
+let fail = 0;
+const failures = [];
+
+function ok(desc, cond, extra) {
+  if (cond) {
+    pass += 1;
+    console.log(`  PASS  ${desc}`);
+  } else {
+    fail += 1;
+    failures.push({ desc, extra });
+    console.log(`  FAIL  ${desc}`);
+    if (extra !== undefined) console.log('        ' + JSON.stringify(extra));
+  }
+}
+
+function section(name) {
+  console.log(`\n=== ${name} ===`);
+}
+
+async function api(method, urlPath, { user, body, file, fileName } = {}) {
+  const headers = {};
+  if (user) headers['x-user-id'] = user;
+  let payload;
+  if (file) {
+    const form = new FormData();
+    form.append('file', new Blob([file]), fileName ?? 'upload.csv');
+    payload = form;
+  } else if (body !== undefined) {
+    headers['content-type'] = 'application/json';
+    payload = JSON.stringify(body);
+  }
+  const res = await fetch(`${BASE}${urlPath}`, { method, headers, body: payload });
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+    // no body
+  }
+  return { status: res.status, body: json };
+}
+
+function readFixture(name) {
+  return fs.readFileSync(path.join(FIXTURES, name));
+}
+
+async function uploadAndCommit(user, fixtureName, label) {
+  const buf = readFixture(fixtureName);
+  const upload = await api('POST', '/imports/roster', { user, file: buf, fileName: fixtureName });
+  if (upload.status !== 201) {
+    return { upload };
+  }
+  const importId = upload.body.importId;
+  const preview = await api('GET', `/imports/${importId}/preview`, { user });
+  const commit = await api('POST', `/imports/${importId}/commit`, { user });
+  return { upload, preview, commit, importId };
+}
+
+async function main() {
+  console.log(`Heritage Saturday Capability 1 QA suite — API base: ${BASE}`);
+
+  // -------------------------------------------------------------------
+  section('Story 1.1 / 1.5 / 1.8 — valid CSV import: preview + commit + history');
+  // -------------------------------------------------------------------
+  const validCsv = await uploadAndCommit(USER_A, 'valid-roster.csv', 'valid csv');
+  ok('upload returns 201 with PENDING status', validCsv.upload.status === 201 && validCsv.upload.body.status === 'PENDING', validCsv.upload);
+  ok('preview lists every row with OK/WARNING/ERROR status', validCsv.preview.status === 200 &&
+      validCsv.preview.body.rows.length > 0 &&
+      validCsv.preview.body.rows.every((r) => ['OK', 'WARNING', 'ERROR'].includes(r.status)),
+    validCsv.preview.body);
+  ok('preview rows are all OK for a fully valid file', validCsv.preview.body.rows.every((r) => r.status === 'OK'),
+    validCsv.preview.body.rows.filter((r) => r.status !== 'OK'));
+  ok('commit returns 200 with rosterId + summary', validCsv.commit.status === 200 && !!validCsv.commit.body.rosterId, validCsv.commit.body);
+  const expectedCreated = 2 /* teams */ + 40 /* players, 20 per team */;
+  ok(`commit summary created count reflects committed rows (expected ${expectedCreated})`,
+    validCsv.commit.body.summary.created === expectedCreated, validCsv.commit.body.summary);
+  const rosterIdA = validCsv.commit.body.rosterId;
+
+  const history = await api('GET', '/imports', { user: USER_A });
+  ok('import history lists the import with fileName/date/summary', history.status === 200 &&
+      history.body.some((i) => i.importId === validCsv.importId && i.fileName === 'valid-roster.csv' && i.summary.created === expectedCreated),
+    history.body);
+
+  // -------------------------------------------------------------------
+  section('Story 1.1 — valid JSON import produces preview with all rows OK');
+  // -------------------------------------------------------------------
+  const validJson = await uploadAndCommit(USER_A, 'valid-roster.json', 'valid json');
+  ok('JSON upload accepted (201)', validJson.upload.status === 201, validJson.upload);
+  ok('JSON preview rows all OK', validJson.preview.body.rows.every((r) => r.status === 'OK'),
+    validJson.preview.body.rows.filter((r) => r.status !== 'OK'));
+  ok('JSON commit succeeds', validJson.commit.status === 200, validJson.commit.body);
+
+  // -------------------------------------------------------------------
+  section('Story 1.2 — missing required column (position) -> ERROR, cannot commit those rows');
+  // -------------------------------------------------------------------
+  const missingCol = await uploadAndCommit(USER_A, 'missing-column.csv', 'missing column');
+  const missingColRow = missingCol.preview.body.rows.find((r) => r.sheet === 'players' && r.data.player_id === 'T1-P1');
+  ok('row with missing position is flagged ERROR', missingColRow?.status === 'ERROR', missingColRow);
+  ok('ERROR message names the missing field', missingColRow?.messages.some((m) => /position/i.test(m)), missingColRow?.messages);
+  ok('commit succeeds but excludes the ERROR row (failed count > 0)', missingCol.commit.status === 200 && missingCol.commit.body.summary.failed > 0, missingCol.commit.body);
+
+  // -------------------------------------------------------------------
+  section('Story 1.2 (Teams) — missing team_name -> ERROR');
+  // -------------------------------------------------------------------
+  const missingTeamName = await uploadAndCommit(USER_A, 'missing-team-name.csv', 'missing team_name');
+  const missingTeamRow = missingTeamName.preview.body.rows.find((r) => r.sheet === 'teams' && r.data.team_id === 'T2');
+  ok('team row with missing team_name is flagged ERROR', missingTeamRow?.status === 'ERROR', missingTeamRow);
+  ok('ERROR message names team_name', missingTeamRow?.messages.some((m) => /team_name/i.test(m)), missingTeamRow?.messages);
+
+  // -------------------------------------------------------------------
+  section('Story 1.3 — duplicate player_id -> ERROR, excluded from commit');
+  // -------------------------------------------------------------------
+  const dupPlayerId = await uploadAndCommit(USER_A, 'duplicate-player-id.csv', 'dup player_id');
+  const dupRows = dupPlayerId.preview.body.rows.filter((r) => r.sheet === 'players' && r.data.player_id === 'T1-P1');
+  ok('both rows sharing the duplicated player_id are flagged ERROR', dupRows.length === 2 && dupRows.every((r) => r.status === 'ERROR'), dupRows);
+  ok('duplicate player_id ERROR message mentions duplicate', dupRows.every((r) => r.messages.some((m) => /duplicate/i.test(m))), dupRows.map(r=>r.messages));
+
+  // -------------------------------------------------------------------
+  section('Story 1.3 — duplicate jersey number within same team_id -> ERROR');
+  // -------------------------------------------------------------------
+  const dupJersey = await uploadAndCommit(USER_A, 'duplicate-jersey.csv', 'dup jersey');
+  const dupJerseyRows = dupJersey.preview.body.rows.filter((r) => r.sheet === 'players' && r.data.team_id === 'T1' && Number(r.data.jersey_number) === 1);
+  ok('both rows sharing the duplicated jersey are flagged ERROR', dupJerseyRows.length === 2 && dupJerseyRows.every((r) => r.status === 'ERROR'), dupJerseyRows);
+
+  // -------------------------------------------------------------------
+  section('Story 1.4 — out-of-range rating + invalid position -> ERROR');
+  // -------------------------------------------------------------------
+  const badRatingPos = await uploadAndCommit(USER_A, 'bad-rating-invalid-position.csv', 'bad rating/position');
+  const badRatingRow = badRatingPos.preview.body.rows.find((r) => r.sheet === 'players' && r.data.player_id === 'T1-P3');
+  const badPosRow = badRatingPos.preview.body.rows.find((r) => r.sheet === 'players' && r.data.player_id === 'T1-P4');
+  ok('out-of-range overall_rating (150) flagged ERROR', badRatingRow?.status === 'ERROR', badRatingRow);
+  ok('invalid position code (ZZ) flagged ERROR', badPosRow?.status === 'ERROR', badPosRow);
+
+  // -------------------------------------------------------------------
+  section('Story 1.7 — unsupported extension / corrupt content -> top-level error, no partial import');
+  // -------------------------------------------------------------------
+  const unsupported = await api('POST', '/imports/roster', { user: USER_A, file: readFixture('unsupported.txt'), fileName: 'unsupported.txt' });
+  ok('unsupported extension returns 422 with topLevelError', unsupported.status === 422 && !!unsupported.body.detail?.topLevelError, unsupported.body);
+  const rostersBeforeCorrupt = await api('GET', '/rosters', { user: USER_A });
+  const corrupt = await api('POST', '/imports/roster', { user: USER_A, file: readFixture('corrupt.xlsx'), fileName: 'corrupt.xlsx' });
+  // SheetJS's XLSX.read() parses arbitrary bytes without throwing, so parseXlsx guards on
+  // "at least one recognized roster sheet carrying at least one data row" — otherwise garbage
+  // would land as a silently-successful empty import. Story 1 AC7.
+  ok('corrupt xlsx content returns 422 with a topLevelError (Story 1 AC7)',
+    corrupt.status === 422 && !!corrupt.body.detail?.topLevelError, corrupt.body);
+  ok('the corrupt-xlsx error names the parse failure rather than a generic 500',
+    /roster sheets|data rows|workbook/i.test(corrupt.body.detail?.topLevelError ?? ''), corrupt.body);
+  ok('no importId is handed back for a rejected file', !corrupt.body.importId, corrupt.body);
+
+  const rostersAfterCorrupt = await api('GET', '/rosters', { user: USER_A });
+  // GET /rosters returns a bare array; guard against both sides being undefined,
+  // which would make this comparison vacuously true.
+  ok('rejected corrupt file creates no partial import (roster count unchanged)',
+    Array.isArray(rostersBeforeCorrupt.body) && Array.isArray(rostersAfterCorrupt.body) &&
+      rostersAfterCorrupt.body.length === rostersBeforeCorrupt.body.length,
+    { before: rostersBeforeCorrupt.body?.length, after: rostersAfterCorrupt.body?.length });
+
+  // -------------------------------------------------------------------
+  section('Story 1 AC10-14 — orphan player is WARNING, dropped, and counted as skipped');
+  // -------------------------------------------------------------------
+  const orphan = await uploadAndCommit(USER_A, 'orphan-player.csv', 'orphan player');
+  const orphanRows = orphan.preview.body.rows.filter((r) => r.sheet === 'players');
+  const orphanRow = orphanRows.find((r) => r.data?.player_id === 'T9-P1' || r.data?.team_id === 'T9');
+  const goodRows = orphanRows.filter((r) => r !== orphanRow);
+
+  ok('AC10: orphan player row previews as WARNING', orphanRow?.status === 'WARNING', orphanRow);
+  ok('AC10: WARNING message says the player will not be created',
+    /does not match any team in this import/.test(orphanRow?.messages?.[0] ?? '') &&
+      /will not be created/.test(orphanRow?.messages?.[0] ?? ''), orphanRow?.messages);
+  ok('AC14: non-orphan player rows remain OK', goodRows.length === 2 && goodRows.every((r) => r.status === 'OK'),
+    goodRows.map((r) => r.status));
+
+  // Preview projection: 1 team + 2 committable players = 3 created; orphan projected as skipped.
+  ok('preview summary projects created=3 (1 team + 2 players), excluding the orphan',
+    orphan.preview.body.summary.created === 3, orphan.preview.body.summary);
+  ok('preview summary projects the orphan as skipped, not created or failed',
+    orphan.preview.body.summary.skipped === 1 && orphan.preview.body.summary.failed === 0,
+    orphan.preview.body.summary);
+
+  ok('AC12(a): commit succeeds despite the WARNING row', orphan.commit.status === 200, orphan.commit.body);
+  const orphanSummary = orphan.commit.body.summary;
+  ok('AC12(c): commit summary created=3 does not include the dropped orphan',
+    orphanSummary.created === 3, orphanSummary);
+  ok('AC12(d): commit summary counts the dropped orphan as skipped',
+    orphanSummary.skipped === 1, orphanSummary);
+  ok('AC12(e): the orphan is not counted as failed', orphanSummary.failed === 0, orphanSummary);
+  // Regression: previously a dropped orphan landed in no bucket at all.
+  ok('every entity row lands in exactly one bucket (created+skipped+failed === 4 rows)',
+    orphanSummary.created + orphanSummary.skipped + orphanSummary.failed === 4, orphanSummary);
+
+  const orphanRoster = await api('GET', `/rosters/${orphan.commit.body.rosterId}`, { user: USER_A });
+  const orphanTeam = orphanRoster.body.teams?.[0];
+  const orphanTeamPlayers = await api('GET', `/teams/${orphanTeam?.id}/players`, { user: USER_A });
+  const playerNames = (orphanTeamPlayers.body ?? []).map((p) => p.lastName ?? p.last_name);
+  ok('AC12(b): only one team was created (T9 never existed)', orphanRoster.body.teams?.length === 1, orphanRoster.body.teams?.length);
+  ok('AC12(b): the orphan player was NOT persisted', !playerNames.includes('Vance'), playerNames);
+  ok('AC12(b): the two linked players WERE persisted', playerNames.includes('Fenwick') && playerNames.includes('Alder'), playerNames);
+
+  // -------------------------------------------------------------------
+  section('Orphan coaches + depth-chart rows — WARNING, dropped, counted as skipped');
+  // -------------------------------------------------------------------
+  const orphan2 = await uploadAndCommit(USER_A, 'orphan-coach-depthchart.csv', 'orphan coach/depthchart');
+  const rowsOf = (sheet) => orphan2.preview.body.rows.filter((r) => r.sheet === sheet);
+
+  const coachRows = rowsOf('coaches');
+  const orphanCoach = coachRows.find((r) => r.data?.team_id === 'T9');
+  const linkedCoach = coachRows.find((r) => r.data?.team_id === 'T1');
+  ok('orphan coach previews as WARNING', orphanCoach?.status === 'WARNING', orphanCoach);
+  ok('orphan coach message says the coach will not be created',
+    /this coach will not be created/.test(orphanCoach?.messages?.[0] ?? ''), orphanCoach?.messages);
+  ok('linked coach stays OK', linkedCoach?.status === 'OK', linkedCoach);
+
+  const dcRows = rowsOf('depthchart');
+  ok('both depth-chart rows for the missing team preview as WARNING',
+    dcRows.length === 2 && dcRows.every((r) => r.status === 'WARNING'), dcRows.map((r) => r.status));
+  ok('depth-chart WARNING names the missing team as the root cause',
+    dcRows.every((r) => /does not match any team in this import/.test(r.messages?.[0] ?? '')),
+    dcRows.map((r) => r.messages));
+
+  ok('commit succeeds', orphan2.commit.status === 200, orphan2.commit.body);
+  const s2 = orphan2.commit.body.summary;
+  ok('commit created=4 (1 team + 2 players + 1 linked coach)', s2.created === 4, s2);
+  ok('commit skipped=3 (1 orphan coach + 2 orphan depth-chart rows)', s2.skipped === 3, s2);
+  ok('commit failed=0 (orphans are unlinked, not invalid)', s2.failed === 0, s2);
+  ok('every entity row lands in exactly one bucket (4+3+0 === 7 rows)',
+    s2.created + s2.skipped + s2.failed === 7, s2);
+
+  ok('preview projection agrees with the committed summary',
+    orphan2.preview.body.summary.created === s2.created &&
+      orphan2.preview.body.summary.skipped === s2.skipped &&
+      orphan2.preview.body.summary.failed === s2.failed,
+    { preview: orphan2.preview.body.summary, commit: s2 });
+
+  const roster2 = await api('GET', `/rosters/${orphan2.commit.body.rosterId}`, { user: USER_A });
+  ok('only the one real team was created', roster2.body.teams?.length === 1, roster2.body.teams?.length);
+
+  // -------------------------------------------------------------------
+  section('Import summary counts depth-chart ENTRIES, not charts (rows-vs-charts unit fix)');
+  // -------------------------------------------------------------------
+  const dcImport = await uploadAndCommit(USER_A, 'complete-depthchart.csv', 'complete depth chart');
+  ok('complete-depthchart import commits', dcImport.commit.status === 200, dcImport.commit.body);
+
+  const dcSummary = dcImport.commit.body.summary;
+  // 1 team + 20 players + 20 depth-chart entries. Counting charts would give 22.
+  ok('commit created=41 counts each depth-chart entry, not the single chart',
+    dcSummary.created === 41, dcSummary);
+  ok('commit skipped=0 and failed=0 for a fully-linked complete chart',
+    dcSummary.skipped === 0 && dcSummary.failed === 0, dcSummary);
+  ok('every entity row lands in exactly one bucket (41 rows)',
+    dcSummary.created + dcSummary.skipped + dcSummary.failed === 41, dcSummary);
+
+  ok('preview projection agrees exactly with the committed summary',
+    dcImport.preview.body.summary.created === dcSummary.created &&
+      dcImport.preview.body.summary.skipped === dcSummary.skipped &&
+      dcImport.preview.body.summary.failed === dcSummary.failed,
+    { preview: dcImport.preview.body.summary, commit: dcSummary });
+
+  // The imported chart must actually be used, not silently regenerated.
+  const dcRoster = await api('GET', `/rosters/${dcImport.commit.body.rosterId}`, { user: USER_A });
+  const dcTeamId = dcRoster.body.teams?.[0]?.id;
+  const importedChart = await api('GET', `/depth-charts/${dcTeamId}`, { user: USER_A });
+  ok('the committed depth chart is IMPORTED, not AUTO_GENERATED',
+    importedChart.body?.source === 'IMPORTED', importedChart.body?.source);
+  ok('the imported chart has all 20 entries and is legal',
+    importedChart.body?.entries?.length === 20 && importedChart.body?.legal === true,
+    { entries: importedChart.body?.entries?.length, legal: importedChart.body?.legal });
+
+  // -------------------------------------------------------------------
+  section('Incomplete depth chart — rows stay OK but are counted as skipped, not created');
+  // -------------------------------------------------------------------
+  const incDc = await uploadAndCommit(USER_A, 'incomplete-depthchart.csv', 'incomplete depth chart');
+  const incDcRows = incDc.preview.body.rows.filter((r) => r.sheet === 'depthchart');
+  ok('incomplete-chart rows are individually valid (status OK, not WARNING)',
+    incDcRows.length === 5 && incDcRows.every((r) => r.status === 'OK'), incDcRows.map((r) => r.status));
+
+  ok('commit succeeds', incDc.commit.status === 200, incDc.commit.body);
+  const incSummary = incDc.commit.body.summary;
+  ok('commit created=21 (1 team + 20 players); no depth-chart entries written',
+    incSummary.created === 21, incSummary);
+  ok('the 5 dropped depth-chart rows are counted as skipped',
+    incSummary.skipped === 5, incSummary);
+  ok('every entity row lands in exactly one bucket (26 rows)',
+    incSummary.created + incSummary.skipped + incSummary.failed === 26, incSummary);
+  ok('preview projection agrees with the committed summary',
+    incDc.preview.body.summary.created === incSummary.created &&
+      incDc.preview.body.summary.skipped === incSummary.skipped,
+    { preview: incDc.preview.body.summary, commit: incSummary });
+
+  // The dropped chart must fall back to auto-generation, per architecture §5.
+  const incRoster = await api('GET', `/rosters/${incDc.commit.body.rosterId}`, { user: USER_A });
+  const incChart = await api('GET', `/depth-charts/${incRoster.body.teams?.[0]?.id}`, { user: USER_A });
+  ok('an incomplete imported chart falls back to AUTO_GENERATED',
+    incChart.body?.source === 'AUTO_GENERATED', incChart.body?.source);
+
+  // -------------------------------------------------------------------
+  section('Depth-chart completeness is judged on rows that will actually be written');
+  // -------------------------------------------------------------------
+  // All 20 required positions appear among the rows, but the QB row references a player
+  // that does not exist. Judging completeness before dropping undeliverable rows would
+  // persist an "IMPORTED" chart with no QB, which getOrGenerate then regenerates anyway.
+  const phantom = await uploadAndCommit(USER_A, 'depthchart-phantom-qb.csv', 'phantom QB');
+  const phantomDc = phantom.preview.body.rows.filter((r) => r.sheet === 'depthchart');
+  const phantomQbRow = phantomDc.find((r) => r.data?.player_id === 'T1-P99');
+  ok('the row referencing a nonexistent player is WARNING', phantomQbRow?.status === 'WARNING', phantomQbRow);
+  ok('the other 19 depth-chart rows are individually OK',
+    phantomDc.filter((r) => r.status === 'OK').length === 19, phantomDc.map((r) => r.status));
+
+  ok('commit succeeds', phantom.commit.status === 200, phantom.commit.body);
+  const ps = phantom.commit.body.summary;
+  ok('no partial chart is written: created=21 (1 team + 20 players), 0 depth-chart entries',
+    ps.created === 21, ps);
+  ok('all 20 depth-chart rows are counted as skipped', ps.skipped === 20, ps);
+  ok('every entity row lands in exactly one bucket (41 rows)',
+    ps.created + ps.skipped + ps.failed === 41, ps);
+  ok('preview projection agrees with the committed summary',
+    phantom.preview.body.summary.created === ps.created &&
+      phantom.preview.body.summary.skipped === ps.skipped,
+    { preview: phantom.preview.body.summary, commit: ps });
+
+  const phantomRoster = await api('GET', `/rosters/${phantom.commit.body.rosterId}`, { user: USER_A });
+  const phantomChart = await api('GET', `/depth-charts/${phantomRoster.body.teams?.[0]?.id}`, { user: USER_A });
+  ok('the chart falls back to AUTO_GENERATED rather than persisting a QB-less IMPORTED chart',
+    phantomChart.body?.source === 'AUTO_GENERATED', phantomChart.body?.source);
+  ok('the auto-generated chart is legal and fills QB',
+    phantomChart.body?.legal === true &&
+      phantomChart.body?.entries?.some((e) => e.position === 'QB'),
+    { legal: phantomChart.body?.legal });
+
+  // -------------------------------------------------------------------
+  section('Story 1.9 — downloadable blank template (spec requires at least one format)');
+  // -------------------------------------------------------------------
+  console.log('  NOT-VERIFIED  No template-download route found in architecture.md §4 route list or in apps/api controllers — see report.');
+
+  // -------------------------------------------------------------------
+  section('Story 1.6 / architecture §8 — private-by-default ownership, cross-user isolation');
+  // -------------------------------------------------------------------
+  const previewAsB = await api('GET', `/imports/${validCsv.importId}/preview`, { user: USER_B });
+  ok('user B gets 404 (not data, not 403) reading user A\'s import', previewAsB.status === 404, previewAsB.body);
+
+  const rosterDetailAsB = await api('GET', `/rosters/${rosterIdA}`, { user: USER_B });
+  ok('user B gets 404 reading user A\'s roster detail', rosterDetailAsB.status === 404, rosterDetailAsB.body);
+
+  const rostersListAsB = await api('GET', '/rosters', { user: USER_B });
+  ok('user B\'s roster list does not include user A\'s roster', rostersListAsB.status === 200 && !rostersListAsB.body.some((r) => r.id === rosterIdA), rostersListAsB.body);
+
+  const teamsAsOwnerA = await api('GET', `/rosters/${rosterIdA}`, { user: USER_A });
+  const teamIdA1 = teamsAsOwnerA.body?.teams?.[0]?.id;
+  if (teamIdA1) {
+    const teamsQueryAsB = await api('GET', `/teams?rosterId=${rosterIdA}`, { user: USER_B });
+    ok('user B cannot list teams for user A\'s rosterId (404 or empty, not leaked)',
+      teamsQueryAsB.status === 404 || (teamsQueryAsB.status === 200 && teamsQueryAsB.body.length === 0), teamsQueryAsB.body);
+
+    const playersAsB = await api('GET', `/teams/${teamIdA1}/players`, { user: USER_B });
+    ok('user B gets 404 reading user A\'s team players', playersAsB.status === 404, playersAsB.body);
+
+    const depthChartAsB = await api('GET', `/depth-charts/${teamIdA1}`, { user: USER_B });
+    ok('user B gets 404 reading user A\'s depth chart', depthChartAsB.status === 404, depthChartAsB.body);
+  } else {
+    ok('(setup) could resolve a teamId for cross-user team/player/depth-chart checks', false, teamsAsOwnerA.body);
+  }
+
+  // -------------------------------------------------------------------
+  section('Story 2 — game setup: team selection, depth chart, archetypes, run game');
+  // -------------------------------------------------------------------
+  const rosterDetail = await api('GET', `/rosters/${rosterIdA}`, { user: USER_A });
+  const teams = rosterDetail.body.teams;
+  ok('roster has at least two teams to choose from', teams.length >= 2, teams);
+  const [teamA, teamB] = teams;
+
+  const dcA = await api('GET', `/depth-charts/${teamA.id}`, { user: USER_A });
+  ok('depth chart auto-generates for team A with all required starting positions filled', dcA.status === 200 && dcA.body.warnings.length === 0, dcA.body);
+  const dcB = await api('GET', `/depth-charts/${teamB.id}`, { user: USER_A });
+  ok('depth chart auto-generates for team B with all required starting positions filled', dcB.status === 200 && dcB.body.warnings.length === 0, dcB.body);
+
+  const sameTeamTwice = await api('POST', '/games/simulate', {
+    user: USER_A,
+    body: {
+      homeTeamId: teamA.id, awayTeamId: teamA.id,
+      homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3',
+    },
+  });
+  ok('selecting the same team twice is rejected (400)', sameTeamTwice.status === 400, sameTeamTwice.body);
+
+  // Unfillable-roster team, for UNFILLABLE_POSITIONS 422 check
+  const unfillable = await uploadAndCommit(USER_A, 'unfillable-roster.csv', 'unfillable roster');
+  ok('unfillable-roster import commits (rows are individually valid)', unfillable.commit.status === 200, unfillable.commit.body);
+  const unfillableRosterDetail = await api('GET', `/rosters/${unfillable.commit.body.rosterId}`, { user: USER_A });
+  const unfillableTeamId = unfillableRosterDetail.body.teams[0]?.id;
+  if (unfillableTeamId) {
+    const unfillableSim = await api('POST', '/games/simulate', {
+      user: USER_A,
+      body: {
+        homeTeamId: unfillableTeamId, awayTeamId: teamA.id,
+        homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+        awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3',
+      },
+    });
+    ok('unfillable roster returns 422 UNFILLABLE_POSITIONS naming positions', unfillableSim.status === 422 &&
+        unfillableSim.body.error === 'UNFILLABLE_POSITIONS' &&
+        Array.isArray(unfillableSim.body.detail?.positions) && unfillableSim.body.detail.positions.length > 0,
+      unfillableSim.body);
+  } else {
+    ok('(setup) could resolve unfillable team id', false, unfillableRosterDetail.body);
+  }
+
+  const invalidArchetype = await api('POST', '/games/simulate', {
+    user: USER_A,
+    body: {
+      homeTeamId: teamA.id, awayTeamId: teamB.id,
+      homeOffArchetype: 'NOT_A_REAL_ARCHETYPE', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3',
+    },
+  });
+  ok('invalid archetype value rejected (400)', invalidArchetype.status === 400, invalidArchetype.body);
+
+  const runGame = await api('POST', '/games/simulate', {
+    user: USER_A,
+    body: {
+      homeTeamId: teamA.id, awayTeamId: teamB.id,
+      homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'SPREAD', awayDefArchetype: 'NICKEL_ZONE',
+      seed: 'qa-fixed-seed-001',
+    },
+  });
+  ok('Run Game with valid teams/archetypes/seed succeeds in one call (no further input)', runGame.status === 201 && runGame.body.status === 'COMPLETE', runGame.body);
+  const gameId1 = runGame.body.gameId;
+
+  // Cross-user ownership on games/simulate: user B must not be able to use user A's teams
+  const crossOwnerSim = await api('POST', '/games/simulate', {
+    user: USER_B,
+    body: {
+      homeTeamId: teamA.id, awayTeamId: teamB.id,
+      homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3',
+    },
+  });
+  ok('user B cannot simulate a game using user A\'s teams (400, not owned)', crossOwnerSim.status === 400, crossOwnerSim.body);
+
+  // -------------------------------------------------------------------
+  section('Story 2.5 / Determinism — repeated seed => identical result; different seed => different result');
+  // -------------------------------------------------------------------
+  const runGameRepeat = await api('POST', '/games/simulate', {
+    user: USER_A,
+    body: {
+      homeTeamId: teamA.id, awayTeamId: teamB.id,
+      homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'SPREAD', awayDefArchetype: 'NICKEL_ZONE',
+      seed: 'qa-fixed-seed-001',
+    },
+  });
+  const gameId2 = runGameRepeat.body.gameId;
+  ok('repeat run with same seed succeeds', runGameRepeat.status === 201, runGameRepeat.body);
+
+  const box1 = await api('GET', `/games/${gameId1}/box-score`, { user: USER_A });
+  const box2 = await api('GET', `/games/${gameId2}/box-score`, { user: USER_A });
+
+  function normalizeForCompare(b) {
+    if (!b) return null;
+    const { gameId, ...rest } = b; // gameId will differ, everything else must match
+    return rest;
+  }
+  const norm1 = normalizeForCompare(box1.body);
+  const norm2 = normalizeForCompare(box2.body);
+  ok('same seed produces identical final score', JSON.stringify(norm1?.finalScore) === JSON.stringify(norm2?.finalScore), { a: norm1?.finalScore, b: norm2?.finalScore });
+  ok('same seed produces identical quarter-by-quarter line', JSON.stringify(norm1?.quarterByQuarter) === JSON.stringify(norm2?.quarterByQuarter), { a: norm1?.quarterByQuarter, b: norm2?.quarterByQuarter });
+  ok('same seed produces identical team stats', JSON.stringify(norm1?.teamStats) === JSON.stringify(norm2?.teamStats), { a: norm1?.teamStats, b: norm2?.teamStats });
+  // playerStats arrays may differ in element order per game row insert order; compare as sorted-by-playerId
+  function sortedPlayerStats(ps) {
+    const clone = { home: [...(ps?.home ?? [])].sort((a, b) => a.playerId.localeCompare(b.playerId)), away: [...(ps?.away ?? [])].sort((a, b) => a.playerId.localeCompare(b.playerId)) };
+    return clone;
+  }
+  ok('same seed produces identical full per-player stat line', JSON.stringify(sortedPlayerStats(norm1?.playerStats)) === JSON.stringify(sortedPlayerStats(norm2?.playerStats)),
+    { a: sortedPlayerStats(norm1?.playerStats), b: sortedPlayerStats(norm2?.playerStats) });
+
+  const runGameDiffSeed = await api('POST', '/games/simulate', {
+    user: USER_A,
+    body: {
+      homeTeamId: teamA.id, awayTeamId: teamB.id,
+      homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'SPREAD', awayDefArchetype: 'NICKEL_ZONE',
+      seed: 'qa-different-seed-002',
+    },
+  });
+  const box3 = await api('GET', `/games/${runGameDiffSeed.body.gameId}/box-score`, { user: USER_A });
+  const different = JSON.stringify(box1.body.finalScore) !== JSON.stringify(box3.body.finalScore) ||
+    JSON.stringify(box1.body.quarterByQuarter) !== JSON.stringify(box3.body.quarterByQuarter) ||
+    JSON.stringify(box1.body.playerStats) !== JSON.stringify(box3.body.playerStats);
+  ok('a different seed produces a different result', different, { seed1: box1.body.finalScore, seed3: box3.body.finalScore });
+
+  // -------------------------------------------------------------------
+  section('Story 3 — box score content + persistence/no-re-simulate');
+  // -------------------------------------------------------------------
+  ok('final score has team names and point totals with unambiguous winner/tie',
+    box1.status === 200 && !!box1.body.teams?.home?.teamName && !!box1.body.teams?.away?.teamName &&
+      typeof box1.body.finalScore.home === 'number' && typeof box1.body.finalScore.away === 'number',
+    box1.body);
+
+  const qSum = box1.body.quarterByQuarter.reduce((acc, q) => ({ home: acc.home + q.home, away: acc.away + q.away }), { home: 0, away: 0 });
+  ok('quarter-by-quarter line sums to final score', qSum.home === box1.body.finalScore.home && qSum.away === box1.body.finalScore.away,
+    { qSum, finalScore: box1.body.finalScore });
+
+  const ts = box1.body.teamStats;
+  ok('team stat line includes total/passing/rushing yards + turnovers for both teams',
+    ['home', 'away'].every((side) => typeof ts[side].totalYards === 'number' && typeof ts[side].passingYards === 'number' && typeof ts[side].rushingYards === 'number' && typeof ts[side].turnovers === 'number'),
+    ts);
+
+  const anyPlayerStats = box1.body.playerStats.home.length > 0 || box1.body.playerStats.away.length > 0;
+  ok('per-player stat line present for players with activity', anyPlayerStats, box1.body.playerStats);
+  const allPlayersHaveSomeActivity = [...box1.body.playerStats.home, ...box1.body.playerStats.away].every((p) => {
+    const numericKeys = Object.keys(p).filter((k) => !['playerId', 'firstName', 'lastName', 'position'].includes(k));
+    return numericKeys.some((k) => (p[k] ?? 0) !== 0);
+  });
+  ok('every listed player has at least one non-zero relevant stat (no zero-activity noise rows)', allPlayersHaveSomeActivity,
+    [...box1.body.playerStats.home, ...box1.body.playerStats.away].filter((p) => {
+      const numericKeys = Object.keys(p).filter((k) => !['playerId', 'firstName', 'lastName', 'position'].includes(k));
+      return !numericKeys.some((k) => (p[k] ?? 0) !== 0);
+    }));
+
+  // Reload without re-simulating: fetch box score twice more, byte-compare, and confirm no new Game row appears.
+  const gamesCountQuery = async () => {
+    // No GET /games list route exists; use box-score reload byte-stability + a controlled
+    // reload comparison as the practical verification (see report for the "count Game rows"
+    // caveat — no list endpoint to directly assert row count without DB access).
+    return null;
+  };
+  const boxReloadA = await api('GET', `/games/${gameId1}/box-score`, { user: USER_A });
+  const boxReloadB = await api('GET', `/games/${gameId1}/box-score`, { user: USER_A });
+  ok('reloading the box score route returns byte-identical JSON both times (no re-simulation drift)',
+    JSON.stringify(boxReloadA.body) === JSON.stringify(boxReloadB.body), { a: boxReloadA.body, b: boxReloadB.body });
+  ok('reloaded box score matches the originally-returned result exactly', JSON.stringify(boxReloadA.body) === JSON.stringify(box1.body));
+
+  // Byte-stability above only holds if the DB rows come back in a defined order. Without an
+  // explicit ORDER BY, Postgres row order follows the query plan, which changes as the table
+  // grows — two reads of the same finished game then differ, looking like re-simulation drift.
+  // Assert the ordering contract directly rather than relying on the plan staying put.
+  const isSortedByPlayerId = (stats) =>
+    stats.every((s, i) => i === 0 || stats[i - 1].playerId <= s.playerId);
+  ok('box score home playerStats are ordered by playerId (deterministic serialization)',
+    isSortedByPlayerId(boxReloadA.body.playerStats.home), boxReloadA.body.playerStats.home.map((s) => s.playerId));
+  ok('box score away playerStats are ordered by playerId (deterministic serialization)',
+    isSortedByPlayerId(boxReloadA.body.playerStats.away), boxReloadA.body.playerStats.away.map((s) => s.playerId));
+
+  const missingGame = await api('GET', `/games/does-not-exist/box-score`, { user: USER_A });
+  ok('box score for nonexistent game returns 404', missingGame.status === 404, missingGame.body);
+
+  const boxAsB = await api('GET', `/games/${gameId1}/box-score`, { user: USER_B });
+  ok('user B cannot read user A\'s box score (404)', boxAsB.status === 404, boxAsB.body);
+
+  // -------------------------------------------------------------------
+  section('Contract check — DepthChartResponseDto legality signal');
+  // -------------------------------------------------------------------
+  const dcLegal = await api('GET', `/depth-charts/${teamA.id}`, { user: USER_A });
+  ok(
+    'depth chart for a fully-staffed team reports legal: true',
+    dcLegal.body?.legal === true,
+    dcLegal.body,
+  );
+  ok(
+    'legal: true agrees with an empty warnings array',
+    dcLegal.body?.legal === true && dcLegal.body?.warnings?.length === 0,
+    dcLegal.body,
+  );
+
+  const dcIllegal = await api('GET', `/depth-charts/${unfillableTeamId}`, { user: USER_A });
+  ok(
+    'depth chart for a team with unfilled required positions reports legal: false',
+    dcIllegal.body?.legal === false,
+    dcIllegal.body,
+  );
+  ok(
+    'legal: false is accompanied by at least one naming warning',
+    dcIllegal.body?.legal === false && dcIllegal.body?.warnings?.length > 0,
+    dcIllegal.body,
+  );
+
+  // Same class of bug as the box score: unordered entry reads serialize differently
+  // depending on the query plan. `position` is a Postgres enum, so ORDER BY sorts by enum
+  // declaration order (QB, RB, FB, WR, ...), not alphabetically — assert the properties that
+  // ordering guarantees rather than hardcoding the enum's order here.
+  const dcRefetch = await api('GET', `/depth-charts/${teamA.id}`, { user: USER_A });
+  ok('depth chart entries serialize identically across reads (deterministic order)',
+    JSON.stringify(dcRefetch.body.entries) === JSON.stringify(dcLegal.body.entries));
+
+  const dcEntries = dcLegal.body?.entries ?? [];
+  const positionRun = dcEntries.map((e) => e.position);
+  const groupedContiguously = positionRun.every(
+    (p, i) => i === 0 || p !== positionRun[i - 1] ? positionRun.indexOf(p) === i : true,
+  );
+  const slotsAscendWithinPosition = dcEntries.every((e, i) => {
+    if (i === 0) return true;
+    const prev = dcEntries[i - 1];
+    return prev.position !== e.position || prev.slot < e.slot;
+  });
+  ok('depth chart entries group each position contiguously', groupedContiguously,
+    dcEntries.map((e) => `${e.position}:${e.slot}`));
+  ok('depth chart slots ascend within each position', slotsAscendWithinPosition,
+    dcEntries.map((e) => `${e.position}:${e.slot}`));
+
+  // -------------------------------------------------------------------
+  console.log(`\n=== SUMMARY: ${pass} passed, ${fail} failed ===`);
+  if (fail > 0) {
+    console.log('\nFailures:');
+    for (const f of failures) console.log(` - ${f.desc}`);
+    process.exitCode = 1;
+  }
+}
+
+main().catch((e) => {
+  console.error('FATAL ERROR in test runner:', e);
+  process.exit(2);
+});
