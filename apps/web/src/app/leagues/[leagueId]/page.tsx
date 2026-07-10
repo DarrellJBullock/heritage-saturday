@@ -60,11 +60,27 @@ export default async function LeagueHomePage({
             {league.templateKey ? ' · generated from a template' : ''}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canPlay && (
-            <Button size="sm" render={<Link href={`/leagues/${leagueId}/games/new`} />}>
-              New Game
-            </Button>
+            <>
+              <Button size="sm" render={<Link href={`/leagues/${leagueId}/schedule`} />}>
+                Schedule
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                render={<Link href={`/leagues/${leagueId}/standings`} />}
+              >
+                Standings
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                render={<Link href={`/leagues/${leagueId}/games/new`} />}
+              >
+                New Game
+              </Button>
+            </>
           )}
           <Button
             size="sm"
