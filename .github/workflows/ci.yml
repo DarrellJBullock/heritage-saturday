@@ -88,6 +88,97 @@ jobs:
       - name: Worker smoke test
         run: npm run smoke -w @heritage-saturday/worker
 
+  docker:
+    name: Docker images build and run
+    runs-on: ubuntu-latest
+
+    # The api container needs a database to connect to. Runner services publish on
+    # localhost, and the containers below use `--network host`, so they reach it there.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: heritage
+          POSTGRES_PASSWORD: heritage
+          POSTGRES_DB: heritage_saturday
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U heritage -d heritage_saturday"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Building is not enough. A stale tsbuildinfo once made `tsc --incremental` skip
+      # emitting .js entirely: the image built clean and then crash-looped on a missing
+      # dist/main.js. So each image is started and probed, not just built.
+      - name: Build api image
+        run: docker build -f apps/api/Dockerfile -t hs-api:ci .
+
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile -t hs-web:ci .
+
+      # The api image ships the prisma CLI, so migrations need no node toolchain here.
+      - name: Run migrations from the api image
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL="$DATABASE_URL" \
+            hs-api:ci npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+
+      - name: Start api container
+        run: |
+          docker run -d --name hs-api --network host \
+            -e DATABASE_URL="$DATABASE_URL" \
+            hs-api:ci
+
+      - name: Probe the api container
+        run: |
+          for i in $(seq 1 45); do
+            if curl -sf -o /dev/null http://localhost:3001/imports -H 'x-user-id: qa-user-a'; then
+              echo "api container is serving"; exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' hs-api)" != "true" ]; then
+              echo "api container exited early:"; docker logs hs-api; exit 1
+            fi
+            sleep 2
+          done
+          echo "api container never became ready:"; docker logs hs-api; exit 1
+
+      # API_URL is the server-side base for Server Components. On --network host the
+      # runner's localhost is the api container's, so host.docker.internal is unnecessary.
+      - name: Start web container
+        run: |
+          docker run -d --name hs-web --network host \
+            -e API_URL=http://localhost:3001 \
+            hs-web:ci
+
+      - name: Probe the web container, including a Server Component that fetches the API
+        run: |
+          for i in $(seq 1 45); do
+            if curl -sf -o /dev/null http://localhost:3000/; then break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' hs-web)" != "true" ]; then
+              echo "web container exited early:"; docker logs hs-web; exit 1
+            fi
+            sleep 2
+          done
+          curl -sf -o /dev/null http://localhost:3000/ || { docker logs hs-web; exit 1; }
+          # /imports is a Server Component that fetches the API server-side. A 200 here
+          # proves the container reached the API, which a static page would not.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/imports)
+          echo "GET /imports -> $code"
+          [ "$code" = "200" ] || { docker logs hs-web; docker logs hs-api; exit 1; }
+
+      - name: Container logs
+        if: failure()
+        run: docker logs hs-api || true; docker logs hs-web || true
+
+      - name: Stop containers
+        if: always()
+        run: docker rm -f hs-api hs-web 2>/dev/null || true
+
   e2e:
     name: End-to-end (real Postgres)
     runs-on: ubuntu-latest
