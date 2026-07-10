@@ -32,6 +32,15 @@ export const REQUIRED_STARTING_POSITIONS: Position[] = [
 export const LEAGUE_SIZES = [8, 16, 24, 54] as const;
 export type LeagueSize = (typeof LEAGUE_SIZES)[number];
 
+// Roster visibility. PRIVATE = owner only; LEAGUE = readable by any member of the roster's
+// league. (SHARED_LINK / PUBLIC_TEMPLATE are reserved, not yet modeled.)
+export const VISIBILITIES = ['PRIVATE', 'LEAGUE'] as const;
+export type Visibility = (typeof VISIBILITIES)[number];
+
+// A caller's relationship to a league: its owner, or a member with read access.
+export const LEAGUE_ROLES = ['OWNER', 'MEMBER'] as const;
+export type LeagueRole = (typeof LEAGUE_ROLES)[number];
+
 export const OFFENSIVE_ARCHETYPES = [
   'BALANCED', 'POWER_RUN', 'SPREAD', 'VERTICAL_PASSING',
   'WEST_COAST', 'OPTION_RPO', 'PLAY_ACTION_HEAVY',

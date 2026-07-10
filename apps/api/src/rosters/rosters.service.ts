@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { DomainException } from '../common/errors/domain-exception';
-import { RosterDetailDto, RosterListItemDto } from '@heritage-saturday/shared';
+import { RosterDetailDto, RosterListItemDto, Visibility } from '@heritage-saturday/shared';
 
 @Injectable()
 export class RostersService {
@@ -19,12 +19,15 @@ export class RostersService {
       name: r.name,
       teamCount: r._count.teams,
       createdAt: r.createdAt.toISOString(),
+      visibility: r.visibility,
     }));
   }
 
-  async getDetail(rosterId: string, ownerId: string): Promise<RosterDetailDto> {
-    const roster = await this.prisma.roster.findFirst({
-      where: { id: rosterId, ownerId },
+  // Access is enforced by RosterReadAccessGuard on the route (owner, or member of the league
+  // when LEAGUE-visible), so this fetches by id without re-filtering on owner.
+  async getDetail(rosterId: string): Promise<RosterDetailDto> {
+    const roster = await this.prisma.roster.findUnique({
+      where: { id: rosterId },
       include: { teams: true },
     });
     if (!roster) {
@@ -36,6 +39,7 @@ export class RostersService {
       name: roster.name,
       teamCount: roster.teams.length,
       createdAt: roster.createdAt.toISOString(),
+      visibility: roster.visibility,
       teams: roster.teams.map((t) => ({
         id: t.id,
         externalTeamId: t.externalTeamId,
@@ -46,6 +50,25 @@ export class RostersService {
         conference: t.conference,
         division: t.division,
       })),
+    };
+  }
+
+  /**
+   * Set a roster's visibility. Owner-only — enforced by RosterOwnershipGuard on the route.
+   * Promoting to LEAGUE lets every member of the league read this roster and its teams/players.
+   */
+  async setVisibility(rosterId: string, visibility: Visibility): Promise<RosterListItemDto> {
+    const roster = await this.prisma.roster.update({
+      where: { id: rosterId },
+      data: { visibility },
+      include: { _count: { select: { teams: true } } },
+    });
+    return {
+      id: roster.id,
+      name: roster.name,
+      teamCount: roster._count.teams,
+      createdAt: roster.createdAt.toISOString(),
+      visibility: roster.visibility,
     };
   }
 }
