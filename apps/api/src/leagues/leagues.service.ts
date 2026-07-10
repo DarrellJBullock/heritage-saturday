@@ -4,6 +4,8 @@ import {
   CreateLeagueRequestDto,
   LeagueDetailDto,
   LeagueListItemDto,
+  LeagueRole,
+  RosterListItemDto,
 } from '@heritage-saturday/shared';
 import { generateLeague } from '@heritage-saturday/league-generator';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -32,7 +34,7 @@ export class LeaguesService {
     const league = await this.prisma.league.create({
       data: { ownerId, name, size: dto.size, templateKey: null, seed },
     });
-    return this.toListItem(league.id, league.name, league.size, league.templateKey, league.createdAt, 0);
+    return this.toListItem(league.id, league.name, league.size, league.templateKey, league.createdAt, 0, 'OWNER');
   }
 
   /**
@@ -103,14 +105,15 @@ export class LeaguesService {
       return created;
     });
 
-    return this.toListItem(league.id, league.name, league.size, league.templateKey, league.createdAt, size);
+    return this.toListItem(league.id, league.name, league.size, league.templateKey, league.createdAt, size, 'OWNER');
   }
 
-  async listForOwner(ownerId: string): Promise<LeagueListItemDto[]> {
+  /** Leagues the user owns OR is a member of, each tagged with the caller's role. */
+  async listForUser(userId: string): Promise<LeagueListItemDto[]> {
     const leagues = await this.prisma.league.findMany({
-      where: { ownerId },
+      where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
       orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { rosters: true } }, rosters: { select: { _count: { select: { teams: true } } } } },
+      include: { rosters: { select: { _count: { select: { teams: true } } } } },
     });
 
     return leagues.map((l) =>
@@ -121,17 +124,19 @@ export class LeaguesService {
         l.templateKey,
         l.createdAt,
         l.rosters.reduce((sum, r) => sum + r._count.teams, 0),
+        l.ownerId === userId ? 'OWNER' : 'MEMBER',
       ),
     );
   }
 
   /**
-   * League detail. Ownership is enforced by LeagueOwnershipGuard on the route, so this is only
-   * reached for the caller's own league; the extra `ownerId` filter is defence in depth.
+   * League detail. Access is enforced by LeagueReadAccessGuard on the route (owner or member).
+   * The owner sees every roster; a member sees only LEAGUE-visible ones. teamCount always
+   * reflects the rosters the caller can actually see.
    */
-  async getDetail(leagueId: string, ownerId: string): Promise<LeagueDetailDto> {
-    const league = await this.prisma.league.findFirst({
-      where: { id: leagueId, ownerId },
+  async getDetail(leagueId: string, userId: string): Promise<LeagueDetailDto> {
+    const league = await this.prisma.league.findUnique({
+      where: { id: leagueId },
       include: {
         rosters: {
           orderBy: { createdAt: 'desc' },
@@ -143,15 +148,32 @@ export class LeaguesService {
       throw new DomainException(404, 'NOT_FOUND', 'League not found');
     }
 
-    const teamCount = league.rosters.reduce((sum, r) => sum + r._count.teams, 0);
+    const isOwner = league.ownerId === userId;
+    // The guard already admitted the caller; a non-owner here is necessarily a member.
+    const visibleRosters = isOwner
+      ? league.rosters
+      : league.rosters.filter((r) => r.visibility === 'LEAGUE');
+
+    const teamCount = visibleRosters.reduce((sum, r) => sum + r._count.teams, 0);
+    const rosters: RosterListItemDto[] = visibleRosters.map((r) => ({
+      id: r.id,
+      name: r.name,
+      teamCount: r._count.teams,
+      createdAt: r.createdAt.toISOString(),
+      visibility: r.visibility,
+    }));
+
     return {
-      ...this.toListItem(league.id, league.name, league.size, league.templateKey, league.createdAt, teamCount),
-      rosters: league.rosters.map((r) => ({
-        id: r.id,
-        name: r.name,
-        teamCount: r._count.teams,
-        createdAt: r.createdAt.toISOString(),
-      })),
+      ...this.toListItem(
+        league.id,
+        league.name,
+        league.size,
+        league.templateKey,
+        league.createdAt,
+        teamCount,
+        isOwner ? 'OWNER' : 'MEMBER',
+      ),
+      rosters,
     };
   }
 
@@ -162,7 +184,8 @@ export class LeaguesService {
     templateKey: string | null,
     createdAt: Date,
     teamCount: number,
+    role: LeagueRole,
   ): LeagueListItemDto {
-    return { id, name, size, templateKey, teamCount, createdAt: createdAt.toISOString() };
+    return { id, name, size, templateKey, teamCount, createdAt: createdAt.toISOString(), role };
   }
 }

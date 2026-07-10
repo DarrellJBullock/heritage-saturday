@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { DomainException } from '../common/errors/domain-exception';
 import { PlayerDto, TeamDetailDto, TeamSummaryDto } from '@heritage-saturday/shared';
+import { isLeagueMember } from '../common/guards/base-read-access.guard';
 
 @Injectable()
 export class TeamsService {
@@ -33,11 +34,19 @@ export class TeamsService {
     };
   }
 
-  async listForRoster(rosterId: string, ownerId: string): Promise<TeamSummaryDto[]> {
-    // Ownership enforced here (query param, not a route param the guard can see):
-    // first predicate is always roster.ownerId per architecture.md §3.
-    const roster = await this.prisma.roster.findFirst({ where: { id: rosterId, ownerId } });
-    if (!roster) {
+  async listForRoster(rosterId: string, userId: string): Promise<TeamSummaryDto[]> {
+    // Access enforced here (rosterId is a query param, not a route param a guard can see):
+    // the owner always, or a member of the league when the roster is LEAGUE-visible. 404 (not
+    // 403) on denial, matching the ownership/read-access guards.
+    const roster = await this.prisma.roster.findUnique({
+      where: { id: rosterId },
+      select: { ownerId: true, leagueId: true, visibility: true },
+    });
+    const allowed =
+      roster &&
+      (roster.ownerId === userId ||
+        (roster.visibility === 'LEAGUE' && (await isLeagueMember(this.prisma, roster.leagueId, userId))));
+    if (!allowed) {
       throw new DomainException(404, 'NOT_FOUND', 'Roster not found');
     }
 

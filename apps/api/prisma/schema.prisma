@@ -20,7 +20,8 @@ datasource db {
 
 enum Visibility {
   PRIVATE
-  // LEAGUE, SHARED_LINK, PUBLIC_TEMPLATE reserved for later capabilities — not used yet
+  LEAGUE // readable by any member of the roster's league (see LeagueMember)
+  // SHARED_LINK, PUBLIC_TEMPLATE reserved for later capabilities — not used yet
 }
 
 enum ImportRowStatus {
@@ -107,10 +108,11 @@ model User {
   authProvider String?
   authSubject  String?
 
-  leagues League[]
-  rosters Roster[]
-  imports RosterImport[]
-  games   Game[]
+  leagues          League[]
+  leagueMemberships LeagueMember[]
+  rosters          Roster[]
+  imports          RosterImport[]
+  games            Game[]
 
   // Postgres treats NULLs as distinct, so this permits many fixture rows with both null
   // while still forbidding two accounts for the same provider identity.
@@ -140,8 +142,25 @@ model League {
   rosters Roster[]
   imports RosterImport[]
   games   Game[]
+  members LeagueMember[]
 
   @@index([ownerId])
+}
+
+// Additional users granted access to a league beyond its owner. The owner is implicit via
+// League.ownerId and is NOT stored here. A member can read the league's LEAGUE-visible rosters
+// (and their teams/players/depth-charts); they cannot mutate anything. Roles (commissioner,
+// manager) are a later capability — today a member is a viewer.
+model LeagueMember {
+  id        String   @id @default(cuid())
+  leagueId  String
+  league    League   @relation(fields: [leagueId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([leagueId, userId])
+  @@index([userId])
 }
 
 model RosterImport {

@@ -407,6 +407,62 @@ async function main() {
   ok('user B gets 404 trying to simulate user A\'s season', simAsB.status === 404, simAsB.body);
 
   // -------------------------------------------------------------------
+  section('Multi-user leagues — membership + LEAGUE visibility grants member read access');
+  // -------------------------------------------------------------------
+  const B_EMAIL = 'qa-b@heritage-saturday.local'; // qa-user-b's seeded email
+  const P = genTeams[0].id; // a team in GEN; aPlayerId is one of its players
+
+  // Before membership, B (a stranger to this league) sees nothing.
+  ok('non-member gets 404 on the league', (await api('GET', `/leagues/${GEN}`, { user: USER_B })).status === 404);
+  ok('non-member gets 404 on a roster', (await api('GET', `/rosters/${genRosterId}`, { user: USER_B })).status === 404);
+  ok('non-member gets 404 on a team', (await api('GET', `/teams/${P}`, { user: USER_B })).status === 404);
+  ok('non-member gets 404 on a player', (await api('GET', `/players/${aPlayerId}`, { user: USER_B })).status === 404);
+
+  // Owner adds B as a member by email.
+  const add = await api('POST', `/leagues/${GEN}/members`, { user: USER_A, body: { email: B_EMAIL } });
+  ok('owner adds a member by email (200, role MEMBER)', add.status === 200 && add.body.role === 'MEMBER', add.body);
+  const membersList = await api('GET', `/leagues/${GEN}/members`, { user: USER_A });
+  ok('members list shows the owner first, then the new member',
+    membersList.body[0]?.role === 'OWNER' && membersList.body.some((m) => m.email === B_EMAIL), membersList.body);
+  ok('adding an unknown email is rejected (404)',
+    (await api('POST', `/leagues/${GEN}/members`, { user: USER_A, body: { email: 'nobody@nowhere.test' } })).status === 404);
+
+  // A member can see the league SHELL, but PRIVATE rosters are still hidden until promoted.
+  const leagueAsMemberBefore = await api('GET', `/leagues/${GEN}`, { user: USER_B });
+  ok('member can now read the league shell (200)', leagueAsMemberBefore.status === 200, leagueAsMemberBefore.status);
+  ok('member sees no rosters while all are PRIVATE', leagueAsMemberBefore.body.rosters.length === 0, leagueAsMemberBefore.body.rosters);
+  ok('member still gets 404 on a PRIVATE roster', (await api('GET', `/rosters/${genRosterId}`, { user: USER_B })).status === 404);
+  ok('GET /leagues as the member lists the shared league tagged MEMBER',
+    (await api('GET', '/leagues', { user: USER_B })).body.some((l) => l.id === GEN && l.role === 'MEMBER'));
+
+  // Owner promotes the roster to LEAGUE.
+  const promote = await api('PATCH', `/rosters/${genRosterId}/visibility`, { user: USER_A, body: { visibility: 'LEAGUE' } });
+  ok('owner promotes a roster to LEAGUE (200)', promote.status === 200 && promote.body.visibility === 'LEAGUE', promote.body);
+
+  // Now the member can read the roster and everything under it.
+  ok('member can read the LEAGUE roster', (await api('GET', `/rosters/${genRosterId}`, { user: USER_B })).status === 200);
+  ok('member can read a team in it', (await api('GET', `/teams/${P}`, { user: USER_B })).status === 200);
+  ok('member can read a player in it', (await api('GET', `/players/${aPlayerId}`, { user: USER_B })).status === 200);
+  ok('member can read the depth chart', (await api('GET', `/depth-charts/${P}`, { user: USER_B })).status === 200);
+  ok('member can list teams for the LEAGUE roster', (await api('GET', `/teams?rosterId=${genRosterId}`, { user: USER_B })).status === 200);
+  const leagueAsMemberAfter = await api('GET', `/leagues/${GEN}`, { user: USER_B });
+  ok('the LEAGUE roster now appears in the member\'s league detail', leagueAsMemberAfter.body.rosters.some((r) => r.id === genRosterId), leagueAsMemberAfter.body.rosters);
+
+  // A different user who is NOT a member still gets nothing, even though the roster is LEAGUE.
+  ok('a non-member gets 404 on the LEAGUE roster', (await api('GET', `/rosters/${genRosterId}`, { user: DEV_LOGIN_USER })).status === 404);
+
+  // A member has READ only: no writes, no owner ops.
+  ok('member cannot change visibility (404, owner-only)',
+    (await api('PATCH', `/rosters/${genRosterId}/visibility`, { user: USER_B, body: { visibility: 'PRIVATE' } })).status === 404);
+  ok('member cannot add other members (404, owner-only)',
+    (await api('POST', `/leagues/${GEN}/members`, { user: USER_B, body: { email: 'x@y.test' } })).status === 404);
+
+  // Removing the member revokes access.
+  ok('owner removes the member (204)', (await api('DELETE', `/leagues/${GEN}/members/${USER_B}`, { user: USER_A })).status === 204);
+  ok('the removed member gets 404 on the (still LEAGUE) roster again',
+    (await api('GET', `/rosters/${genRosterId}`, { user: USER_B })).status === 404);
+
+  // -------------------------------------------------------------------
   section('Story 1.1 / 1.5 / 1.8 — valid CSV import: preview + commit + history');
   // -------------------------------------------------------------------
   const validCsv = await uploadAndCommit(USER_A, 'valid-roster.csv', 'valid csv');

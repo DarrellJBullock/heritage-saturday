@@ -10,6 +10,8 @@ import {
   GameStatus,
   Position,
   LeagueSize,
+  Visibility,
+  LeagueRole,
 } from './enums';
 
 // ---------------------------------------------------------------------------
@@ -33,10 +35,27 @@ export interface LeagueListItemDto {
   templateKey: string | null;
   teamCount: number;
   createdAt: string;
+  // The caller's relationship to this league: OWNER (created it) or MEMBER (granted access).
+  role: LeagueRole;
 }
 
 export interface LeagueDetailDto extends LeagueListItemDto {
+  // For a member, only LEAGUE-visible rosters appear; for the owner, all of them.
   rosters: RosterListItemDto[];
+}
+
+export interface LeagueMemberDto {
+  userId: string;
+  email: string;
+  role: LeagueRole;
+}
+
+export interface AddMemberRequestDto {
+  email: string;
+}
+
+export interface SetRosterVisibilityRequestDto {
+  visibility: Visibility;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +113,7 @@ export interface RosterListItemDto {
   name: string;
   teamCount: number;
   createdAt: string;
+  visibility: Visibility;
 }
 
 export interface RosterDetailDto extends RosterListItemDto {

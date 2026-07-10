@@ -4,6 +4,7 @@ import { ApiKeyMiddleware } from './common/auth/api-key.middleware';
 import { TrustedProxyUserMiddleware } from './common/auth/trusted-proxy-user.middleware';
 import { AuthModule } from './auth/auth.module';
 import { LeaguesModule } from './leagues/leagues.module';
+import { MembersModule } from './members/members.module';
 import { ImportsModule } from './imports/imports.module';
 import { RostersModule } from './rosters/rosters.module';
 import { TeamsModule } from './teams/teams.module';
@@ -17,6 +18,7 @@ import { ScheduleModule } from './schedule/schedule.module';
     PrismaModule,
     AuthModule,
     LeaguesModule,
+    MembersModule,
     ImportsModule,
     RostersModule,
     TeamsModule,

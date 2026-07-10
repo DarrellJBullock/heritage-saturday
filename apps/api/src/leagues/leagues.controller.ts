@@ -3,7 +3,7 @@ import { CreateLeagueRequestDto, LEAGUE_SIZES, LeagueSize } from '@heritage-satu
 import { LeaguesService } from './leagues.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { RequestUser } from '../common/auth/trusted-proxy-user.middleware';
-import { LeagueOwnershipGuard } from '../common/guards/ownership.guards';
+import { LeagueReadAccessGuard } from '../common/guards/read-access.guards';
 import { DomainException } from '../common/errors/domain-exception';
 
 @Controller('leagues')
@@ -21,11 +21,11 @@ export class LeaguesController {
 
   @Get()
   list(@CurrentUser() user: RequestUser) {
-    return this.leaguesService.listForOwner(user.id);
+    return this.leaguesService.listForUser(user.id);
   }
 
   @Get(':id')
-  @UseGuards(LeagueOwnershipGuard)
+  @UseGuards(LeagueReadAccessGuard)
   detail(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     return this.leaguesService.getDetail(id, user.id);
   }

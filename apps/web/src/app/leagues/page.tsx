@@ -54,9 +54,12 @@ export default async function LeaguesPage() {
             <Link href={`/leagues/${league.id}`}>
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base">{league.name}</CardTitle>
-                <Badge variant={league.templateKey ? 'default' : 'secondary'}>
-                  {league.templateKey ? 'Generated' : 'Custom'}
-                </Badge>
+                <div className="flex gap-1">
+                  {league.role === 'MEMBER' && <Badge variant="outline">Shared with you</Badge>}
+                  <Badge variant={league.templateKey ? 'default' : 'secondary'}>
+                    {league.templateKey ? 'Generated' : 'Custom'}
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent className="text-muted-foreground text-sm">
                 {league.teamCount} {league.teamCount === 1 ? 'team' : 'teams'} · created{' '}
