@@ -139,10 +139,41 @@ container while the client-rendered pages kept working. `API_URL` is deliberatel
 
 Both default to `localhost:3001`, so running everything on the host needs no env at all.
 
+## Running apps/api in a container
+
+Also profile-gated, so the default stack still builds nothing:
+
+```sh
+docker compose --profile api up --build api            # http://localhost:3001
+docker compose --profile api run --rm api \
+  npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+```
+
+Migrations are deliberately **not** run on container start: coupling every restart to a
+schema write is how concurrent replicas corrupt the migration table. Run them explicitly
+with the command above, or from the host with `make db-migrate`.
+
+The image is Debian slim, not Alpine. `schema.prisma` sets no `binaryTargets`, so Prisma
+picks its query engine at `prisma generate` time for whatever platform it runs on — which
+is why generate happens inside the image. On Alpine that would mean the musl engine and an
+OpenSSL that Prisma 5 is fussy about; Debian sidesteps the whole class of problem.
+
+It weighs ~1.6GB, because npm hoists every workspace's dependencies to the root
+`node_modules`, so the runtime stage carries `next`, the Nest CLI, and `typescript` despite
+needing none of them. Fine for local dev; slim it before deploying anywhere.
+
+### Running the whole stack in containers
+
+```sh
+WEB_API_URL=http://api:3001 docker compose --profile api --profile web up --build
+```
+
+`web`'s `API_URL` then points at the `api` service over compose DNS instead of
+`host.docker.internal`, and the `extra_hosts` mapping is unused.
+
 ## Follow-ups (not in this Capability-1 slice)
-- An `apps/api` Dockerfile, if/when the API needs to run containerized rather than on the
-  host. At that point the `web` service's `API_URL` becomes `http://api:3001` over compose
-  DNS, and the `extra_hosts` mapping can go.
+- Slim the API runtime image: install only `apps/api`'s production dependencies in the
+  runtime stage and copy the generated Prisma client across.
 - (`apps/worker` is scaffolded but intentionally idle — nothing enqueues in Capability 1.)
 - Storage bucket setup (Supabase Storage/S3-compatible) — not needed for Capability 1 since
   uploaded roster files are parsed in-memory and not required to be retained

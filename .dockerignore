@@ -10,7 +10,13 @@ dist-test
 **/dist-test
 .next
 **/.next
+
+# Must be `**/`-prefixed: a bare `*.tsbuildinfo` matches only the context root. Leaking the
+# host's apps/api/tsconfig.tsbuildinfo made `tsc --incremental` believe the build was already
+# done, so `nest build` emitted declarations and no .js — and the image crash-looped on a
+# missing dist/main.js.
 *.tsbuildinfo
+**/*.tsbuildinfo
 
 .git
 .github

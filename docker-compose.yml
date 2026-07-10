@@ -68,19 +68,39 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Server-side fetches only (Server Components). Inside this container `localhost`
-      # is the container, not the host — so SSR must reach the host-run API explicitly.
+      # Server-side fetches only (Server Components). Inside this container `localhost` is
+      # the container, not the host — so SSR must reach the API explicitly. Defaults to the
+      # host-run API. When running the `api` service too, point it at compose DNS:
+      #   WEB_API_URL=http://api:3001 docker compose --profile api --profile web up --build
       # See apps/web/src/lib/config.ts.
-      API_URL: http://host.docker.internal:3001
+      API_URL: ${WEB_API_URL:-http://host.docker.internal:3001}
     extra_hosts:
       # Docker Desktop provides host.docker.internal; on Linux this mapping creates it.
+      # Only needed while the API runs on the host.
       - "host.docker.internal:host-gateway"
 
-  # NOTE: apps/api does not yet have a Dockerfile (it currently runs via `nest start` on the
-  # host, against this compose stack's postgres/redis over localhost ports). An `api` service
-  # is intentionally NOT defined yet. Add it here (with a
-  # `build: { context: ., dockerfile: apps/api/Dockerfile }`) once a Dockerfile exists —
-  # see docs/dev-setup.md. At that point `web`'s API_URL becomes `http://api:3001`.
+  api:
+    # Behind a profile, like `web`: the default stack must not build an image. Running the
+    # API on the host with `npm run start:dev` remains the normal dev loop; this service is
+    # for exercising the container.
+    profiles: ["api"]
+    build:
+      # Repo root: the API imports packages/{shared,importers,validation,simulation-engine}.
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: heritage-saturday-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      # Compose DNS, and the container-internal port 5432 — not the host's 5433 mapping.
+      DATABASE_URL: postgresql://heritage:heritage@postgres:5432/heritage_saturday?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   heritage_saturday_postgres_data:
