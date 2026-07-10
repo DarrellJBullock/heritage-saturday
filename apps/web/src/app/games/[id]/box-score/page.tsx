@@ -1,4 +1,5 @@
-import { apiClient, ApiError } from '@/lib/api-client';
+import { ApiError } from '@/lib/api-client';
+import { serverApiClient } from '@/lib/api-client.server';
 import type { BoxScoreResponseDto, PlayerGameStatsDto } from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -54,7 +55,7 @@ export default async function BoxScorePage({ params }: PageProps) {
   let error: string | null = null;
 
   try {
-    box = await apiClient.get<BoxScoreResponseDto>(`/games/${id}/box-score`);
+    box = await serverApiClient.get<BoxScoreResponseDto>(`/games/${id}/box-score`);
   } catch (err) {
     error = err instanceof ApiError ? err.message : 'Failed to load box score.';
   }

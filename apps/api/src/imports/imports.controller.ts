@@ -12,7 +12,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ImportsService } from './imports.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';
-import { RequestUser } from '../common/auth/auth-stub.middleware';
+import { RequestUser } from '../common/auth/trusted-proxy-user.middleware';
 import { ImportOwnershipGuard } from '../common/guards/ownership.guards';
 
 @Controller('imports')

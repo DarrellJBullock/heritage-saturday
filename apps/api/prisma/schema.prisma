@@ -97,9 +97,23 @@ model User {
   email     String   @unique
   createdAt DateTime @default(now())
 
+  // Identity as asserted by the upstream OAuth provider. `authSubject` is the provider's
+  // stable subject claim (Google's `sub`), NOT the email: an email can be reassigned, and
+  // Google explicitly documents `sub` as the only durable identifier.
+  //
+  // Nullable because the seeded users (dev-user-1, qa-user-a, qa-user-b — see prisma/seed.ts)
+  // predate OAuth and are driven directly by the e2e suite. A row with both fields null has
+  // no way to sign in, which is exactly right for a fixture.
+  authProvider String?
+  authSubject  String?
+
   rosters Roster[]
   imports RosterImport[]
   games   Game[]
+
+  // Postgres treats NULLs as distinct, so this permits many fixture rows with both null
+  // while still forbidding two accounts for the same provider identity.
+  @@unique([authProvider, authSubject])
 }
 
 model RosterImport {

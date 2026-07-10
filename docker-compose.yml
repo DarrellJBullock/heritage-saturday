@@ -58,10 +58,9 @@ services:
       # packages/shared plus the hoisted root node_modules.
       context: .
       dockerfile: apps/web/Dockerfile
-      args:
-        # Baked into the client bundle at build time. The API's address is NOT here: the
-        # browser calls this app's own /api/proxy/* route on the same origin.
-        NEXT_PUBLIC_DEV_USER_ID: dev-user-1
+      # No build args: nothing about the API or the user belongs in the client bundle. The
+      # browser calls /api/proxy/* on this app's own origin, and identity comes from the
+      # session.
     container_name: heritage-saturday-web
     restart: unless-stopped
     ports:
@@ -76,6 +75,14 @@ services:
       # Only needed if the API is running with API_SHARED_SECRET set. The default compose
       # `api` service opts out via ALLOW_INSECURE_NO_API_KEY, so this is normally empty.
       API_SHARED_SECRET: ${API_SHARED_SECRET:-}
+      # Auth.js refuses to start without this. Any value works locally; rotating it signs
+      # everyone out. Generate a real one with `openssl rand -base64 32`.
+      AUTH_SECRET: ${AUTH_SECRET:-local-development-only-not-a-secret}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+      # ALLOW_DEV_LOGIN is deliberately absent: the image sets NODE_ENV=production, and
+      # apps/web refuses to boot with both set. Sign in with Google, or run `npm run dev`
+      # on the host for the password-less dev login.
     extra_hosts:
       # Docker Desktop provides host.docker.internal; on Linux this mapping creates it.
       # Only needed while the API runs on the host.

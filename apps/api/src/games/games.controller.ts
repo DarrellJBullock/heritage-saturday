@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { GamesService } from './games.service';
 import { SimulateGameDto } from './dto/simulate-game.dto';
 import { CurrentUser } from '../common/auth/current-user.decorator';
-import { RequestUser } from '../common/auth/auth-stub.middleware';
+import { RequestUser } from '../common/auth/trusted-proxy-user.middleware';
 import { GameOwnershipGuard } from '../common/guards/ownership.guards';
 
 @Controller('games')

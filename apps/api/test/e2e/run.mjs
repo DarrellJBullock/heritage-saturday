@@ -4,10 +4,15 @@
 // using built-in fetch, chosen because there is no existing e2e test harness
 // wired up in apps/api yet (only unit tests exist in packages/*).
 //
-// Prereqs: API running, DB migrated, and two User rows seeded:
-//   qa-user-a, qa-user-b (see QA report for the seed SQL used).
+// Prereqs: API running, DB migrated, and the seeded User rows (`npx prisma db seed`):
+//   qa-user-a, qa-user-b — the identities this suite drives the API as;
+//   dev-user-1           — the identity apps/web's dev-login signs in as.
 //
 // Usage: node apps/api/test/e2e/run.mjs
+//
+// Set WEB_BASE (e.g. http://localhost:3000) with apps/web running under ALLOW_DEV_LOGIN=true to
+// additionally exercise the proxy's identity assertion — that a signed-in browser cannot forge
+// `x-user-id`. Skipped when unset, but REQUIRED under CI.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +21,14 @@ import { fileURLToPath } from 'node:url';
 const BASE = process.env.API_BASE ?? 'http://localhost:3001';
 const USER_A = 'qa-user-a';
 const USER_B = 'qa-user-b';
+
+// apps/web, if it is running. The proxy section below needs it; everything else drives the API
+// directly. Unset, that section is skipped — except under CI, where it is mandatory (a security
+// check that silently stops running is worse than no check at all).
+const WEB = process.env.WEB_BASE ?? null;
+// The seeded user apps/web's dev-login provider signs in as. Distinct from USER_A/USER_B, which
+// is the point: the session says dev-user-1 no matter what the request headers claim.
+const DEV_LOGIN_USER = 'dev-user-1';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(__dirname, '..', 'e2e-fixtures');
 
@@ -65,6 +78,56 @@ function readFixture(name) {
   return fs.readFileSync(path.join(FIXTURES, name));
 }
 
+// --- apps/web helpers (proxy identity section) --------------------------------
+
+/** Accumulate Set-Cookie into a jar. An empty value is Auth.js clearing a cookie. */
+function mergeSetCookie(jar, res) {
+  for (const raw of res.headers.getSetCookie()) {
+    const eq = raw.split(';')[0].indexOf('=');
+    if (eq === -1) continue;
+    const name = raw.slice(0, eq).trim();
+    const value = raw.split(';')[0].slice(eq + 1).trim();
+    if (value === '') jar.delete(name);
+    else jar.set(name, value);
+  }
+}
+
+/** `redirect: 'manual'` so a 307 to /signin is observable rather than followed. */
+async function web(urlPath, { jar, headers = {}, method = 'GET', body } = {}) {
+  const h = { ...headers };
+  if (jar?.size) h.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+  const res = await fetch(`${WEB}${urlPath}`, { method, headers: h, body, redirect: 'manual' });
+  let json = null;
+  try {
+    json = await res.clone().json();
+  } catch {
+    // HTML or empty body
+  }
+  return { status: res.status, body: json, location: res.headers.get('location'), res };
+}
+
+/**
+ * Drive the real Auth.js dev-login flow rather than forging a cookie: csrf token -> credentials
+ * callback -> session cookie. Requires apps/web running with ALLOW_DEV_LOGIN=true and
+ * NODE_ENV != production.
+ */
+async function signInAsDevUser() {
+  const jar = new Map();
+  const csrf = await web('/api/auth/csrf', { jar });
+  mergeSetCookie(jar, csrf.res);
+  const csrfToken = csrf.body?.csrfToken;
+  if (!csrfToken) throw new Error('apps/web returned no csrfToken; is it running with AUTH_SECRET?');
+
+  const callback = await web('/api/auth/callback/dev-login', {
+    jar,
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ csrfToken, callbackUrl: `${WEB}/` }).toString(),
+  });
+  mergeSetCookie(jar, callback.res);
+  return jar;
+}
+
 async function uploadAndCommit(user, fixtureName, label) {
   const buf = readFixture(fixtureName);
   const upload = await api('POST', '/imports/roster', { user, file: buf, fileName: fixtureName });
@@ -77,8 +140,85 @@ async function uploadAndCommit(user, fixtureName, label) {
   return { upload, preview, commit, importId };
 }
 
+/**
+ * The API believes `x-user-id`. That is only safe because the browser cannot set it: apps/web's
+ * /api/proxy route strips whatever arrives and re-asserts the id from the session. These checks
+ * exist because that guarantee is invisible in the API's own tests — every direct call in this
+ * file *does* choose its own identity, which is precisely the power a browser must not have.
+ *
+ * Signs in as dev-user-1, then tries to read qa-user-a's data by forging headers.
+ */
+async function proxyIdentitySection(rosterIdA, importIdA) {
+  section('apps/web proxy — identity comes from the session, never from the request');
+
+  if (!WEB) {
+    const msg = 'WEB_BASE is not set, so the proxy identity/spoof checks did not run.';
+    if (process.env.CI) {
+      // Mandatory in CI: a security check that quietly skips is indistinguishable from one that
+      // passes, and this is the only place the header-forging defence is exercised.
+      console.log(`  FAIL  ${msg} It is required under CI.`);
+      fail += 1;
+      failures.push({ desc: msg });
+      return;
+    }
+    console.log(`  SKIP  ${msg}`);
+    console.log('        Start apps/web (ALLOW_DEV_LOGIN=true) and set WEB_BASE=http://localhost:3000');
+    return;
+  }
+
+  // Signed out: the proxy must refuse before it ever reaches the API.
+  const anonProxy = await web('/api/proxy/rosters');
+  ok('signed-out /api/proxy/* returns 401 JSON (not an HTML redirect a fetch() cannot parse)',
+    anonProxy.status === 401 && anonProxy.body?.error === 'UNAUTHENTICATED', anonProxy.body);
+
+  // Guards a real regression: with no `authorized` callback, Auth.js defaults to authorized and
+  // `export default auth` lets every signed-out page render.
+  const anonPage = await web('/imports');
+  ok('signed-out page request redirects to /signin (the `authorized` callback is wired)',
+    anonPage.status === 307 && (anonPage.location ?? '').includes('/signin'),
+    { status: anonPage.status, location: anonPage.location });
+
+  const jar = await signInAsDevUser();
+  const session = await web('/api/auth/session', { jar });
+  ok('dev-login establishes a session for dev-user-1',
+    session.body?.user?.id === DEV_LOGIN_USER, session.body);
+
+  // The signed-out check above cannot tell a correctly wired `authorized` callback from one
+  // hardcoded to false — both redirect. Only this says the gate admits as well as rejects.
+  const authedPage = await web('/imports', { jar });
+  ok('signed-in page request renders (200), so the gate admits and does not merely reject',
+    authedPage.status === 200, { status: authedPage.status, location: authedPage.location });
+
+  // The honest request: whatever dev-user-1 is allowed to see.
+  const honest = await web('/api/proxy/rosters', { jar });
+  ok('signed-in proxy request reaches the API (200)', honest.status === 200, honest.body);
+  ok('dev-user-1\'s roster list does not contain user A\'s roster',
+    Array.isArray(honest.body) && !honest.body.some((r) => r.id === rosterIdA), honest.body);
+
+  // The attack: a signed-in browser forging both headers it must not control.
+  const forged = { 'x-user-id': USER_A, 'x-api-key': 'forged-not-the-real-secret' };
+
+  const spoofedList = await web('/api/proxy/rosters', { jar, headers: forged });
+  ok('forged x-user-id is overwritten — response is identical to the honest request',
+    spoofedList.status === 200 && JSON.stringify(spoofedList.body) === JSON.stringify(honest.body),
+    { honest: honest.body, spoofed: spoofedList.body });
+  ok('forged x-user-id does not leak user A\'s roster into the list',
+    Array.isArray(spoofedList.body) && !spoofedList.body.some((r) => r.id === rosterIdA),
+    spoofedList.body);
+
+  // Direct-object reads are the sharper test: the ownership guard must 404, not 403 or 200.
+  const spoofedRoster = await web(`/api/proxy/rosters/${rosterIdA}`, { jar, headers: forged });
+  ok('forged x-user-id gets 404 reading user A\'s roster through the proxy',
+    spoofedRoster.status === 404, spoofedRoster.body);
+
+  const spoofedImport = await web(`/api/proxy/imports/${importIdA}/preview`, { jar, headers: forged });
+  ok('forged x-user-id gets 404 reading user A\'s import preview through the proxy',
+    spoofedImport.status === 404, spoofedImport.body);
+}
+
 async function main() {
   console.log(`Heritage Saturday Capability 1 QA suite — API base: ${BASE}`);
+  console.log(`  apps/web base: ${WEB ?? '(not set — proxy identity checks skipped)'}`);
 
   // -------------------------------------------------------------------
   section('Story 1.1 / 1.5 / 1.8 — valid CSV import: preview + commit + history');
@@ -396,6 +536,8 @@ async function main() {
   } else {
     ok('(setup) could resolve a teamId for cross-user team/player/depth-chart checks', false, teamsAsOwnerA.body);
   }
+
+  await proxyIdentitySection(rosterIdA, validCsv.importId);
 
   // -------------------------------------------------------------------
   section('Story 2 — game setup: team selection, depth chart, archetypes, run game');

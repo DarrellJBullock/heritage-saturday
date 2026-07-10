@@ -178,38 +178,72 @@ jobs:
       # runner's localhost is the api container's, so host.docker.internal is unnecessary.
       # API_SHARED_SECRET is what lets both server-side paths — Server Components and the
       # /api/proxy route — get past the api's gate. Neither is NEXT_PUBLIC_*.
+      # AUTH_SECRET is what Auth.js signs the session cookie with; it refuses to start without
+      # one. Generated per-run: sessions never outlive the job. The image sets
+      # NODE_ENV=production, so dev-login cannot exist here — nothing in this job can sign in,
+      # which is exactly what the probes below assert.
       - name: Start web container
         run: |
           docker run -d --name hs-web --network host \
             -e API_URL=http://localhost:3001 \
             -e API_SHARED_SECRET="$API_SHARED_SECRET" \
+            -e AUTH_SECRET="$(openssl rand -base64 32)" \
             hs-web:ci
 
-      - name: Probe the web container, including a Server Component that fetches the API
+      # /signin is the one page reachable signed out, so it is what proves the image boots and
+      # serves at all. Probing / instead would pass on a redirect from a container that cannot
+      # render anything.
+      - name: Probe the web container
         run: |
           for i in $(seq 1 45); do
-            if curl -sf -o /dev/null http://localhost:3000/; then break; fi
+            if curl -sf -o /dev/null http://localhost:3000/signin; then break; fi
             if [ "$(docker inspect -f '{{.State.Running}}' hs-web)" != "true" ]; then
               echo "web container exited early:"; docker logs hs-web; exit 1
             fi
             sleep 2
           done
-          curl -sf -o /dev/null http://localhost:3000/ || { docker logs hs-web; exit 1; }
-          # /imports is a Server Component that fetches the API server-side. A 200 here
-          # proves the container reached the API *and* presented the shared secret, which a
-          # static page would not.
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/imports)
-          echo "GET /imports -> $code"
-          [ "$code" = "200" ] || { docker logs hs-web; docker logs hs-api; exit 1; }
+          curl -sf -o /dev/null http://localhost:3000/signin || { docker logs hs-web; exit 1; }
 
-      # Every browser request now goes through this route — it is the only way the client
-      # reaches the api. It must attach both the shared secret and the user identity, so a
-      # request carrying neither still succeeds.
-      - name: Probe the web proxy route, the browser's only path to the api
+      # These four assertions are the deployed image's auth contract. They replace an older
+      # pair that demanded 200 from a signed-out /imports and /api/proxy/imports — true when
+      # apps/web was open, and now precisely what must not happen.
+      #
+      # A signed-out 200 from any page means the `authorized` callback is gone: Auth.js
+      # defaults to *authorized*, so `export default auth` silently stops gating.
+      - name: The deployed image is gated when signed out
         run: |
+          fail() { echo "$1"; docker logs hs-web; docker logs hs-api; exit 1; }
+
+          for path in / /imports; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000$path")
+            loc=$(curl -s -o /dev/null -w '%{redirect_url}' "http://localhost:3000$path")
+            echo "GET $path -> $code ($loc)"
+            [ "$code" = "307" ] || fail "expected 307 from $path; a 200 means pages are ungated"
+            case "$loc" in */signin*) ;; *) fail "expected a redirect to /signin, got: $loc" ;; esac
+          done
+
+          # The browser's only path to the api must refuse without a session, and must say so
+          # as JSON — a fetch() caller cannot parse an HTML redirect.
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/proxy/imports)
           echo "GET /api/proxy/imports -> $code"
-          [ "$code" = "200" ] || { docker logs hs-web; docker logs hs-api; exit 1; }
+          [ "$code" = "401" ] || fail "expected 401 from the proxy route, got $code"
+
+          body=$(curl -s http://localhost:3000/api/proxy/imports)
+          case "$body" in *UNAUTHENTICATED*) ;; *) fail "proxy 401 body was not JSON: $body" ;; esac
+
+      # Auth.js will not infer its own origin under NODE_ENV=production: without AUTH_TRUST_HOST
+      # (set in the Dockerfile) every auth() call throws UntrustedHost and sign-in is impossible.
+      # The app still fails closed, so the gating probes above pass either way — this is the only
+      # thing that catches it.
+      - name: The deployed image can actually establish a session
+        run: |
+          if docker logs hs-web 2>&1 | grep -q "UntrustedHost"; then
+            echo "web container cannot trust its own origin — nobody could sign in"
+            docker logs hs-web; exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/auth/providers)
+          echo "GET /api/auth/providers -> $code"
+          [ "$code" = "200" ] || { echo "Auth.js is not serving"; docker logs hs-web; exit 1; }
 
       - name: Container logs
         if: failure()
@@ -258,10 +292,11 @@ jobs:
         run: npx prisma migrate deploy
         working-directory: apps/api
 
-      # Auth is a stub: the API trusts an x-user-id header and every FK requires that
-      # User row to exist. The e2e suite drives the API as qa-user-a / qa-user-b, so
-      # without this step every request 500s on a foreign-key violation.
-      - name: Seed stub-auth users
+      # The API trusts an x-user-id header (only apps/web may assert it) and every FK requires
+      # that User row to exist. The e2e suite drives the API as qa-user-a / qa-user-b, and
+      # apps/web's dev-login signs in as dev-user-1, so without this step every request 500s
+      # on a foreign-key violation.
+      - name: Seed fixture users
         run: npx prisma db seed
         working-directory: apps/api
 
@@ -284,8 +319,46 @@ jobs:
           done
           echo "API did not become ready within 60s"; exit 1
 
+      # apps/web must run for the proxy identity/spoof and page-gating checks, which the suite
+      # treats as mandatory under CI (see proxyIdentitySection). They are the only place the
+      # header-forging defence and the `authorized` callback are exercised at all.
+      #
+      # `next dev`, not `next start`: dev-login is the identity those checks sign in as, and it
+      # is deliberately impossible under a production build — `next start` sets
+      # NODE_ENV=production, where assertDevLoginConfig() refuses to boot with ALLOW_DEV_LOGIN=true.
+      - name: Start web
+        env:
+          API_URL: http://localhost:3001
+          ALLOW_DEV_LOGIN: 'true'
+        run: |
+          # Generated once, here: sessions never outlive the job, and a hardcoded secret in a
+          # public repo would become a real one the day someone copies this file. Auth.js
+          # refuses to start without it.
+          export AUTH_SECRET="$(openssl rand -base64 32)"
+          npm run dev -w @heritage-saturday/web &
+          echo "WEB_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for web
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:3000/signin; then
+              echo "web is up"; exit 0
+            fi
+            if ! kill -0 "$WEB_PID" 2>/dev/null; then
+              echo "web process exited before becoming ready"; exit 1
+            fi
+            sleep 1
+          done
+          echo "web did not become ready within 60s"; exit 1
+
       - name: E2E suite
+        env:
+          WEB_BASE: http://localhost:3000
         run: node apps/api/test/e2e/run.mjs
+
+      - name: Stop web
+        if: always()
+        run: kill "$WEB_PID" 2>/dev/null || true
 
       - name: Stop API
         if: always()
