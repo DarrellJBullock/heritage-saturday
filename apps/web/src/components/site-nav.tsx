@@ -27,6 +27,9 @@ export async function SiteNav() {
             <Link href="/leagues/new" className="text-muted-foreground hover:text-foreground">
               New League
             </Link>
+            <Link href="/invitations" className="text-muted-foreground hover:text-foreground">
+              Invitations
+            </Link>
             <div className="ml-auto flex items-center gap-2">
               <span className="text-muted-foreground hidden sm:inline">{user.email}</span>
               <SignOutButton />

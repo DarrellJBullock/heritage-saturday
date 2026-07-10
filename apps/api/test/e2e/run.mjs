@@ -504,6 +504,67 @@ async function main() {
     (await api('GET', `/rosters/${genRosterId}`, { user: USER_B })).status === 404);
 
   // -------------------------------------------------------------------
+  section('League invitations — invite, inbox, accept/decline, revoke');
+  // -------------------------------------------------------------------
+  const B_MAIL = 'qa-b@heritage-saturday.local';
+  const DEV_MAIL = 'dev@heritage-saturday.local';
+
+  // Owner invites B (COMMISSIONER). B is not a member until they accept.
+  const invite = await api('POST', `/leagues/${GEN}/invitations`, { user: USER_A, body: { email: B_MAIL, role: 'COMMISSIONER' } });
+  ok('owner creates an invitation (200, PENDING)', invite.status === 200 && invite.body.status === 'PENDING' && invite.body.role === 'COMMISSIONER', invite.body);
+  ok('inviting does NOT make them a member yet',
+    (await api('GET', `/rosters/${genRosterId}`, { user: USER_B })).status === 404);
+
+  ok('the league\'s invitation list shows the pending invite',
+    (await api('GET', `/leagues/${GEN}/invitations`, { user: USER_A })).body.some((i) => i.email === B_MAIL), null);
+
+  // Invitee inbox is scoped to the caller's own email.
+  const bInbox = await api('GET', '/invitations', { user: USER_B });
+  ok('B\'s inbox lists the invitation with the league name', bInbox.status === 200 && bInbox.body.some((i) => i.id === invite.body.id && i.leagueName), bInbox.body);
+  ok('the owner\'s inbox does NOT show an invite addressed to a different email',
+    (await api('GET', '/invitations', { user: USER_A })).body.every((i) => i.email !== B_MAIL));
+
+  // Cannot accept an invitation that is not yours.
+  ok('accepting a non-existent invitation is 404', (await api('POST', `/invitations/does-not-exist/accept`, { user: USER_B })).status === 404);
+  ok('a different user cannot accept B\'s invitation (404, not disclosed)',
+    (await api('POST', `/invitations/${invite.body.id}/accept`, { user: DEV_LOGIN_USER })).status === 404);
+
+  // B accepts → becomes a member with the invited role.
+  const accept = await api('POST', `/invitations/${invite.body.id}/accept`, { user: USER_B });
+  ok('B accepts the invitation (200) and it returns the league', accept.status === 200 && accept.body.leagueId === GEN, accept.body);
+  ok('B is now a member and can read the LEAGUE roster', (await api('GET', `/rosters/${genRosterId}`, { user: USER_B })).status === 200);
+  ok('B\'s league role reflects the invited COMMISSIONER',
+    (await api('GET', '/leagues', { user: USER_B })).body.some((l) => l.id === GEN && l.role === 'COMMISSIONER'));
+  ok('accepting an already-accepted invitation is 409', (await api('POST', `/invitations/${invite.body.id}/accept`, { user: USER_B })).status === 409);
+  ok('B\'s inbox no longer lists the accepted invite', (await api('GET', '/invitations', { user: USER_B })).body.every((i) => i.id !== invite.body.id));
+
+  // Re-inviting an existing member is rejected.
+  ok('inviting someone already a member is 409',
+    (await api('POST', `/leagues/${GEN}/invitations`, { user: USER_A, body: { email: B_MAIL } })).status === 409);
+
+  // A commissioner cannot invite (members:manage is owner-only).
+  ok('a commissioner cannot create invitations (403)',
+    (await api('POST', `/leagues/${GEN}/invitations`, { user: USER_B, body: { email: 'x@y.test' } })).status === 403);
+
+  // Invite a not-yet-registered email: allowed and PENDING, but invisible to unrelated users.
+  const newbie = await api('POST', `/leagues/${GEN}/invitations`, { user: USER_A, body: { email: 'newbie@nowhere.test', role: 'MANAGER' } });
+  ok('inviting a not-yet-registered email is accepted (PENDING)', newbie.status === 200 && newbie.body.status === 'PENDING', newbie.body);
+  ok('that invite is absent from B\'s inbox (different email)',
+    (await api('GET', '/invitations', { user: USER_B })).body.every((i) => i.email !== 'newbie@nowhere.test'));
+  // Revoke it.
+  ok('owner revokes a pending invitation (204)', (await api('DELETE', `/leagues/${GEN}/invitations/${newbie.body.id}`, { user: USER_A })).status === 204);
+  ok('the revoked invite is gone from the league list',
+    (await api('GET', `/leagues/${GEN}/invitations`, { user: USER_A })).body.every((i) => i.id !== newbie.body.id));
+
+  // Decline path: invite dev-user-1, who declines from their inbox.
+  const devInv = await api('POST', `/leagues/${GEN}/invitations`, { user: USER_A, body: { email: DEV_MAIL, role: 'VIEWER' } });
+  ok('dev-user-1\'s inbox shows the invite', (await api('GET', '/invitations', { user: DEV_LOGIN_USER })).body.some((i) => i.id === devInv.body.id), null);
+  ok('dev-user-1 declines the invite (204)', (await api('POST', `/invitations/${devInv.body.id}/decline`, { user: DEV_LOGIN_USER })).status === 204);
+  ok('declining does not make them a member',
+    (await api('GET', `/rosters/${genRosterId}`, { user: DEV_LOGIN_USER })).status === 404);
+  ok('a declined invite is gone from the inbox', (await api('GET', '/invitations', { user: DEV_LOGIN_USER })).body.every((i) => i.id !== devInv.body.id));
+
+  // -------------------------------------------------------------------
   section('Story 1.1 / 1.5 / 1.8 — valid CSV import: preview + commit + history');
   // -------------------------------------------------------------------
   const validCsv = await uploadAndCommit(USER_A, 'valid-roster.csv', 'valid csv');

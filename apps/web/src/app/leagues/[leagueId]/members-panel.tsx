@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiClient, ApiError } from '@/lib/api-client';
-import type { LeagueMemberDto, MemberRole } from '@heritage-saturday/shared';
+import type { InvitationDto, LeagueMemberDto, MemberRole } from '@heritage-saturday/shared';
 import { MEMBER_ROLES } from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ const selectClass = 'rounded-md border bg-transparent px-2 py-1 text-sm';
 
 export function MembersPanel({ leagueId }: { leagueId: string }) {
   const [members, setMembers] = useState<LeagueMemberDto[] | null>(null);
+  const [invitations, setInvitations] = useState<InvitationDto[]>([]);
   const [email, setEmail] = useState('');
   const [addRole, setAddRole] = useState<MemberRole>('VIEWER');
   const [busy, setBusy] = useState(false);
@@ -24,7 +25,12 @@ export function MembersPanel({ leagueId }: { leagueId: string }) {
 
   async function refresh() {
     try {
-      setMembers(await apiClient.get<LeagueMemberDto[]>(`/leagues/${leagueId}/members`));
+      const [m, inv] = await Promise.all([
+        apiClient.get<LeagueMemberDto[]>(`/leagues/${leagueId}/members`),
+        apiClient.get<InvitationDto[]>(`/leagues/${leagueId}/invitations`),
+      ]);
+      setMembers(m);
+      setInvitations(inv);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load members.');
     }
@@ -99,19 +105,34 @@ export function MembersPanel({ leagueId }: { leagueId: string }) {
           ))}
         </ul>
 
+        {invitations.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <p className="text-muted-foreground text-xs font-medium uppercase">Pending invitations</p>
+            {invitations.map((inv) => (
+              <div key={inv.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="flex items-center gap-2 truncate">
+                  {inv.email}
+                  <Badge variant="outline">{inv.role}</Badge>
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => act(() => apiClient.delete(`/leagues/${leagueId}/invitations/${inv.id}`))}
+                >
+                  Revoke
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!email.trim()) return;
-            void act(async () => {
-              await apiClient.post(`/leagues/${leagueId}/members`, { email: email.trim(), role: addRole });
-              setEmail('');
-            });
-          }}
+          onSubmit={(e) => e.preventDefault()}
           className="flex flex-wrap items-end gap-2"
         >
           <div className="flex flex-col gap-1">
-            <Label htmlFor="member-email">Add a member by email</Label>
+            <Label htmlFor="member-email">Add or invite by email</Label>
             <input
               id="member-email"
               type="email"
@@ -133,8 +154,33 @@ export function MembersPanel({ leagueId }: { leagueId: string }) {
               </option>
             ))}
           </select>
-          <Button type="submit" size="sm" disabled={busy || !email.trim()}>
-            Add
+          {/* Invite (needs the invitee to accept) or add directly (existing user, instant). */}
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy || !email.trim()}
+            onClick={() =>
+              act(async () => {
+                await apiClient.post(`/leagues/${leagueId}/invitations`, { email: email.trim(), role: addRole });
+                setEmail('');
+              })
+            }
+          >
+            Invite
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy || !email.trim()}
+            onClick={() =>
+              act(async () => {
+                await apiClient.post(`/leagues/${leagueId}/members`, { email: email.trim(), role: addRole });
+                setEmail('');
+              })
+            }
+          >
+            Add now
           </Button>
         </form>
 
