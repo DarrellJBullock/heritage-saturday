@@ -3,6 +3,25 @@ import { BaseOwnershipGuard } from './base-ownership.guard';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
+export class LeagueOwnershipGuard extends BaseOwnershipGuard {
+  protected paramName = 'id';
+  protected async resolveOwnerId(prisma: PrismaService, resourceId: string): Promise<string | null> {
+    const league = await prisma.league.findUnique({ where: { id: resourceId }, select: { ownerId: true } });
+    return league?.ownerId ?? null;
+  }
+}
+
+/** For routes nested under a league where the league id arrives as `leagueId`. */
+@Injectable()
+export class LeagueByParamOwnershipGuard extends BaseOwnershipGuard {
+  protected paramName = 'leagueId';
+  protected async resolveOwnerId(prisma: PrismaService, resourceId: string): Promise<string | null> {
+    const league = await prisma.league.findUnique({ where: { id: resourceId }, select: { ownerId: true } });
+    return league?.ownerId ?? null;
+  }
+}
+
+@Injectable()
 export class RosterOwnershipGuard extends BaseOwnershipGuard {
   protected paramName = 'id';
   protected async resolveOwnerId(prisma: PrismaService, resourceId: string): Promise<string | null> {

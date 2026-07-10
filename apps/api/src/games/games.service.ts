@@ -19,7 +19,7 @@ export class GamesService {
     private readonly depthChartsService: DepthChartsService,
   ) {}
 
-  async simulate(dto: SimulateGameDto, ownerId: string): Promise<SimulateGameResponseDto> {
+  async simulate(dto: SimulateGameDto, ownerId: string, leagueId: string): Promise<SimulateGameResponseDto> {
     this.validateArchetypes(dto);
 
     if (dto.homeTeamId === dto.awayTeamId) {
@@ -36,6 +36,10 @@ export class GamesService {
     }
     if (!awayTeam || awayTeam.roster.ownerId !== ownerId) {
       throw new DomainException(400, 'BAD_REQUEST', 'awayTeamId is not owned by the caller');
+    }
+    // A game is played within one league: both teams must belong to the league in the route.
+    if (homeTeam.roster.leagueId !== leagueId || awayTeam.roster.leagueId !== leagueId) {
+      throw new DomainException(400, 'BAD_REQUEST', 'Both teams must belong to this league');
     }
 
     const [homeLegality, awayLegality] = await Promise.all([
@@ -70,6 +74,7 @@ export class GamesService {
       const createdGame = await tx.game.create({
         data: {
           ownerId,
+          leagueId,
           homeTeamId: dto.homeTeamId,
           awayTeamId: dto.awayTeamId,
           homeOffArchetype: dto.homeOffArchetype,

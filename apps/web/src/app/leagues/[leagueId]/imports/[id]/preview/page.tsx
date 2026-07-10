@@ -31,11 +31,11 @@ function statusBadgeVariant(status: ImportRowStatus) {
 }
 
 interface PageProps {
-  params: Promise<{ id: string }>;
+  params: Promise<{ leagueId: string; id: string }>;
 }
 
 export default function ImportPreviewPage({ params }: PageProps) {
-  const { id } = usePromise(params);
+  const { leagueId, id } = usePromise(params);
 
   const [preview, setPreview] = useState<ImportPreviewResponseDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export default function ImportPreviewPage({ params }: PageProps) {
   useEffect(() => {
     let cancelled = false;
     apiClient
-      .get<ImportPreviewResponseDto>(`/imports/${id}/preview`)
+      .get<ImportPreviewResponseDto>(`/leagues/${leagueId}/imports/${id}/preview`)
       .then((data) => {
         if (!cancelled) setPreview(data);
       })
@@ -57,7 +57,7 @@ export default function ImportPreviewPage({ params }: PageProps) {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [leagueId, id]);
 
   const hasBlockingErrors = preview?.rows.some((row) => row.status === 'ERROR') ?? false;
 
@@ -73,7 +73,9 @@ export default function ImportPreviewPage({ params }: PageProps) {
     setIsCommitting(true);
     setCommitError(null);
     try {
-      const result = await apiClient.post<CommitImportResponseDto>(`/imports/${id}/commit`);
+      const result = await apiClient.post<CommitImportResponseDto>(
+        `/leagues/${leagueId}/imports/${id}/commit`,
+      );
       setCommitResult(result);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -124,8 +126,8 @@ export default function ImportPreviewPage({ params }: PageProps) {
               skipped {commitResult.summary.skipped} · failed {commitResult.summary.failed}
             </p>
             <div className="flex gap-2">
-              <Button render={<a href="/games/new" />}>Set Up a Game</Button>
-              <Button variant="outline" render={<a href="/imports" />}>
+              <Button render={<a href={`/leagues/${leagueId}/games/new`} />}>Set Up a Game</Button>
+              <Button variant="outline" render={<a href={`/leagues/${leagueId}/imports`} />}>
                 Back to Import History
               </Button>
             </div>

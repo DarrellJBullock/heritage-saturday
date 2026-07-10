@@ -1,6 +1,6 @@
-// Deterministic PRNG utilities. No Math.random anywhere in this package.
-// Per company-docs/architecture.md §6: seeded from input.seed (string -> uint32 hash),
-// then threaded through every random decision via mulberry32.
+// Deterministic PRNG utilities, shared by every package that must be reproducible from a seed
+// (simulation-engine, league-generator). No Math.random anywhere. Per architecture.md §6: seed a
+// string -> uint32 hash, then thread it through every random decision via mulberry32.
 
 export function hashStringToUint32(input: string): number {
   // FNV-1a style hash, deterministic and stable across platforms/runs.

@@ -107,6 +107,7 @@ model User {
   authProvider String?
   authSubject  String?
 
+  leagues League[]
   rosters Roster[]
   imports RosterImport[]
   games   Game[]
@@ -116,10 +117,39 @@ model User {
   @@unique([authProvider, authSubject])
 }
 
+// A league is the top-level container introduced in Capability 2: every roster, import, and
+// game belongs to exactly one. Ownership lives here (League.ownerId), but the child rows keep
+// their own ownerId/userId unchanged, so the existing per-resource OwnershipGuards are untouched
+// — see apps/api/src/common/guards/base-ownership.guard.ts.
+model League {
+  id          String     @id @default(cuid())
+  ownerId     String
+  owner       User       @relation(fields: [ownerId], references: [id])
+  name        String
+  // Number of teams the league was created with. For a template-generated league this is the
+  // preset size (8/16/24/54); for an imported/empty league it records the intended size.
+  size        Int
+  // The generation preset used, or null for a league populated by import rather than a template.
+  templateKey String?
+  // Deterministic generation input (see packages/league-generator). Always set — generated from
+  // a uuid when the caller does not supply one — so a league can always be reproduced/audited.
+  seed        String
+  visibility  Visibility @default(PRIVATE)
+  createdAt   DateTime   @default(now())
+
+  rosters Roster[]
+  imports RosterImport[]
+  games   Game[]
+
+  @@index([ownerId])
+}
+
 model RosterImport {
   id            String       @id @default(cuid())
   userId        String
   user          User         @relation(fields: [userId], references: [id])
+  leagueId      String
+  league        League       @relation(fields: [leagueId], references: [id])
   fileName      String
   fileFormat    String // csv | json | xlsx | xls
   status        ImportStatus @default(PENDING)
@@ -135,6 +165,7 @@ model RosterImport {
   roster Roster? // set once committed (back-relation of Roster.sourceImport)
 
   @@index([userId, createdAt])
+  @@index([leagueId, createdAt])
 }
 
 model RosterImportRow {
@@ -155,6 +186,8 @@ model Roster {
   id             String        @id @default(cuid())
   ownerId        String
   owner          User          @relation(fields: [ownerId], references: [id])
+  leagueId       String
+  league         League        @relation(fields: [leagueId], references: [id])
   name           String
   visibility     Visibility    @default(PRIVATE)
   sourceImportId String?       @unique
@@ -164,6 +197,7 @@ model Roster {
   teams Team[]
 
   @@index([ownerId])
+  @@index([leagueId])
 }
 
 model Team {
@@ -276,6 +310,8 @@ model Game {
   id               String             @id @default(cuid())
   ownerId          String
   owner            User               @relation(fields: [ownerId], references: [id])
+  leagueId         String
+  league           League             @relation(fields: [leagueId], references: [id])
   homeTeamId       String
   homeTeam         Team               @relation("HomeTeam", fields: [homeTeamId], references: [id])
   awayTeamId       String
@@ -297,6 +333,7 @@ model Game {
   playerStats PlayerGameStats[]
 
   @@index([ownerId, createdAt])
+  @@index([leagueId, createdAt])
 }
 
 model GameEvent {

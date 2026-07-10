@@ -1,4 +1,4 @@
-import { createRng, rngInt, Rng } from './prng';
+import { createRng, rngInt, Rng } from '@heritage-saturday/shared';
 import { DEFENSE_ARCHETYPE_CONFIG, OFFENSE_ARCHETYPE_CONFIG } from './archetypes';
 import {
   SimDepthChartEntry,

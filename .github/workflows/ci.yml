@@ -146,7 +146,7 @@ jobs:
       - name: Probe the api container
         run: |
           for i in $(seq 1 45); do
-            if curl -sf -o /dev/null http://localhost:3001/imports \
+            if curl -sf -o /dev/null http://localhost:3001/leagues \
                  -H "x-api-key: $API_SHARED_SECRET" -H 'x-user-id: qa-user-a'; then
               echo "api container is serving"; exit 0
             fi
@@ -161,9 +161,9 @@ jobs:
       # a reachable api from being wide open. Prove it is actually on.
       - name: The api rejects callers without the shared secret
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/imports \
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/leagues \
                    -H 'x-user-id: qa-user-a')
-          echo "GET /imports without x-api-key -> $code"
+          echo "GET /leagues without x-api-key -> $code"
           [ "$code" = "401" ] || { echo "expected 401, api is unprotected"; docker logs hs-api; exit 1; }
 
       # A production image with no secret and no explicit opt-out must fail to start.
@@ -214,7 +214,7 @@ jobs:
         run: |
           fail() { echo "$1"; docker logs hs-web; docker logs hs-api; exit 1; }
 
-          for path in / /imports; do
+          for path in / /leagues; do
             code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000$path")
             loc=$(curl -s -o /dev/null -w '%{redirect_url}' "http://localhost:3000$path")
             echo "GET $path -> $code ($loc)"
@@ -224,11 +224,11 @@ jobs:
 
           # The browser's only path to the api must refuse without a session, and must say so
           # as JSON — a fetch() caller cannot parse an HTML redirect.
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/proxy/imports)
-          echo "GET /api/proxy/imports -> $code"
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/proxy/leagues)
+          echo "GET /api/proxy/leagues -> $code"
           [ "$code" = "401" ] || fail "expected 401 from the proxy route, got $code"
 
-          body=$(curl -s http://localhost:3000/api/proxy/imports)
+          body=$(curl -s http://localhost:3000/api/proxy/leagues)
           case "$body" in *UNAUTHENTICATED*) ;; *) fail "proxy 401 body was not JSON: $body" ;; esac
 
       # Auth.js will not infer its own origin under NODE_ENV=production: without AUTH_TRUST_HOST
@@ -308,7 +308,7 @@ jobs:
       - name: Wait for API
         run: |
           for i in $(seq 1 60); do
-            if curl -sf -o /dev/null http://localhost:3001/imports -H 'x-user-id: qa-user-a'; then
+            if curl -sf -o /dev/null http://localhost:3001/leagues -H 'x-user-id: qa-user-a'; then
               echo "API is up"; exit 0
             fi
             # Fail fast if the process died rather than burning the full timeout.
