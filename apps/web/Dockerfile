@@ -44,6 +44,16 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
+# Under NODE_ENV=production Auth.js will not infer its own origin: every auth() call throws
+# UntrustedHost, so nobody can sign in. `next dev` trusts localhost, which is why this is
+# invisible outside a production build. The app fails closed (pages still redirect to
+# /signin), so the symptom is a deployment that can never be signed into, not a leak.
+#
+# This trusts the incoming Host header, which is safe only because a fronting proxy pins it.
+# Deployments that terminate TLS elsewhere should instead set AUTH_URL to the canonical
+# origin, which ignores Host entirely.
+ENV AUTH_TRUST_HOST=true
+
 # Don't run as root.
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 
