@@ -16,6 +16,12 @@ export class TeamsController {
     return this.teamsService.listForRoster(rosterId, user.id);
   }
 
+  @Get(':id')
+  @UseGuards(TeamOwnershipGuard)
+  detail(@Param('id') id: string) {
+    return this.teamsService.getDetail(id);
+  }
+
   @Get(':id/players')
   @UseGuards(TeamOwnershipGuard)
   players(@Param('id') id: string) {
