@@ -317,6 +317,37 @@ async function main() {
   ok('generated teams cannot be played under a different league (400)', crossLeague.status === 400, crossLeague.body);
 
   // -------------------------------------------------------------------
+  section('Team & player pages — detail endpoints with branding, roster, and ratings');
+  // -------------------------------------------------------------------
+  const teamDetail = await api('GET', `/teams/${genTeams[0].id}`, { user: USER_A });
+  ok('GET /teams/:id returns team detail with branding colors (previously unserialized)',
+    teamDetail.status === 200 && !!teamDetail.body.primaryColor && !!teamDetail.body.secondaryColor,
+    teamDetail.body);
+  ok('team detail includes the full roster ordered by jersey number',
+    Array.isArray(teamDetail.body.players) && teamDetail.body.players.length >= 21 &&
+      teamDetail.body.players.every((p, i, a) => i === 0 || a[i - 1].jerseyNumber <= p.jerseyNumber),
+    teamDetail.body.players?.length);
+
+  const aPlayerId = teamDetail.body.players?.[0]?.id;
+  const playerDetail = await api('GET', `/players/${aPlayerId}`, { user: USER_A });
+  ok('GET /players/:id returns player detail with team and overall rating',
+    playerDetail.status === 200 && playerDetail.body.teamName === genTeams[0].teamName &&
+      typeof playerDetail.body.overallRating === 'number',
+    playerDetail.body);
+  ok('player detail exposes rating attributes (generated players are flavored)',
+    typeof playerDetail.body.overallRating === 'number' &&
+      Object.keys(playerDetail.body).some((k) =>
+        ['speed', 'throwPower', 'catching', 'tackle', 'coverage', 'kickPower'].includes(k) &&
+        playerDetail.body[k] !== null),
+    playerDetail.body);
+
+  // Ownership: user B can reach neither the team nor the player (404, not 403, not data).
+  const teamAsB = await api('GET', `/teams/${genTeams[0].id}`, { user: USER_B });
+  ok('user B gets 404 reading user A\'s team detail', teamAsB.status === 404, teamAsB.body);
+  const playerAsB = await api('GET', `/players/${aPlayerId}`, { user: USER_B });
+  ok('user B gets 404 reading user A\'s player detail', playerAsB.status === 404, playerAsB.body);
+
+  // -------------------------------------------------------------------
   section('Story 1.1 / 1.5 / 1.8 — valid CSV import: preview + commit + history');
   // -------------------------------------------------------------------
   const validCsv = await uploadAndCommit(USER_A, 'valid-roster.csv', 'valid csv');

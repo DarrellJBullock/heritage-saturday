@@ -91,13 +91,15 @@ export default async function LeagueHomePage({
         <div className="grid gap-3 sm:grid-cols-2">
           {teams.map((team) => (
             <Card key={team.id}>
-              <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-base">{team.teamName}</CardTitle>
-                {team.conference && <Badge variant="secondary">{team.conference}</Badge>}
-              </CardHeader>
-              <CardContent className="text-muted-foreground text-sm">
-                {[team.city, team.division].filter(Boolean).join(' · ') || '—'}
-              </CardContent>
+              <Link href={`/leagues/${leagueId}/teams/${team.id}`}>
+                <CardHeader className="flex-row items-center justify-between space-y-0">
+                  <CardTitle className="text-base">{team.teamName}</CardTitle>
+                  {team.conference && <Badge variant="secondary">{team.conference}</Badge>}
+                </CardHeader>
+                <CardContent className="text-muted-foreground text-sm">
+                  {[team.city, team.division].filter(Boolean).join(' · ') || '—'}
+                </CardContent>
+              </Link>
             </Card>
           ))}
         </div>

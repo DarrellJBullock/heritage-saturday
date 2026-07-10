@@ -122,6 +122,40 @@ export interface PlayerDto {
   archetype: string | null;
 }
 
+/**
+ * Full team page: the summary fields plus the branding and coach the summary omits, and the
+ * roster. `primaryColor`/`secondaryColor` are surfaced here (they were stored but never
+ * serialized before the team page existed).
+ */
+export interface TeamDetailDto extends TeamSummaryDto {
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  coachName: string | null;
+  players: PlayerDto[];
+}
+
+/** Full player page: identity plus every rating attribute and the owning team. Attributes are
+ * nullable because an imported roster need not populate every column. */
+export interface PlayerDetailDto extends PlayerDto {
+  teamId: string;
+  teamName: string;
+  speed: number | null;
+  strength: number | null;
+  awareness: number | null;
+  throwPower: number | null;
+  throwAccuracy: number | null;
+  catching: number | null;
+  routeRunning: number | null;
+  carry: number | null;
+  trucking: number | null;
+  passBlock: number | null;
+  runBlock: number | null;
+  tackle: number | null;
+  coverage: number | null;
+  kickPower: number | null;
+  kickAccuracy: number | null;
+}
+
 // ---------------------------------------------------------------------------
 // Depth charts
 // ---------------------------------------------------------------------------

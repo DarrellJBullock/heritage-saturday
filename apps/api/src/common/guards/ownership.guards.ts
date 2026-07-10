@@ -56,6 +56,18 @@ export class TeamByParamOwnershipGuard extends BaseOwnershipGuard {
 }
 
 @Injectable()
+export class PlayerOwnershipGuard extends BaseOwnershipGuard {
+  protected paramName = 'id';
+  protected async resolveOwnerId(prisma: PrismaService, resourceId: string): Promise<string | null> {
+    const player = await prisma.player.findUnique({
+      where: { id: resourceId },
+      select: { team: { select: { roster: { select: { ownerId: true } } } } },
+    });
+    return player?.team.roster.ownerId ?? null;
+  }
+}
+
+@Injectable()
 export class GameOwnershipGuard extends BaseOwnershipGuard {
   protected paramName = 'id';
   protected async resolveOwnerId(prisma: PrismaService, resourceId: string): Promise<string | null> {
