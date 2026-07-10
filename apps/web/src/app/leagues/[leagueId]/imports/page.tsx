@@ -12,12 +12,17 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
  * fetched directly on the server via the shared apiClient (works the same in
  * RSC as in the browser since it's just `fetch`).
  */
-export default async function ImportsHistoryPage() {
+export default async function ImportsHistoryPage({
+  params,
+}: {
+  params: Promise<{ leagueId: string }>;
+}) {
+  const { leagueId } = await params;
   let imports: ImportHistoryItemDto[] = [];
   let loadError: string | null = null;
 
   try {
-    imports = await serverApiClient.get<ImportHistoryItemDto[]>('/imports');
+    imports = await serverApiClient.get<ImportHistoryItemDto[]>(`/leagues/${leagueId}/imports`);
   } catch (err) {
     loadError = err instanceof ApiError ? err.message : 'Failed to load import history.';
   }
@@ -26,7 +31,7 @@ export default async function ImportsHistoryPage() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Import History</h1>
-        <Button size="sm" render={<Link href="/imports/new" />}>
+        <Button size="sm" render={<Link href={`/leagues/${leagueId}/imports/new`} />}>
           New Import
         </Button>
       </div>
@@ -73,7 +78,7 @@ export default async function ImportsHistoryPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  render={<Link href={`/imports/${item.importId}/preview`} />}
+                  render={<Link href={`/leagues/${leagueId}/imports/${item.importId}/preview`} />}
                 >
                   Review
                 </Button>

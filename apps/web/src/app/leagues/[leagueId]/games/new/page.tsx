@@ -7,9 +7,10 @@
 // in-progress selections per the architecture's client-state guidance.
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { apiClient, ApiError } from '@/lib/api-client';
 import type {
+  LeagueDetailDto,
   RosterListItemDto,
   TeamSummaryDto,
   DepthChartResponseDto,
@@ -204,6 +205,7 @@ function TeamPanel({
 
 export default function GameSetupPage() {
   const router = useRouter();
+  const { leagueId } = useParams<{ leagueId: string }>();
   const [rosters, setRosters] = useState<RosterListItemDto[]>([]);
   const [teams, setTeams] = useState<TeamSummaryDto[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -228,17 +230,19 @@ export default function GameSetupPage() {
   } = useGameSetupStore();
 
   useEffect(() => {
+    // Only this league's rosters, not every roster the user owns — a game is played within
+    // one league, so offering teams from another would only produce a 400 at simulate time.
     apiClient
-      .get<RosterListItemDto[]>('/rosters')
-      .then((data) => {
-        setRosters(data);
-        if (!rosterId && data.length > 0) setRosterId(data[0].id);
+      .get<LeagueDetailDto>(`/leagues/${leagueId}`)
+      .then((league) => {
+        setRosters(league.rosters);
+        if (!rosterId && league.rosters.length > 0) setRosterId(league.rosters[0].id);
       })
       .catch((err) => {
         setLoadError(err instanceof ApiError ? err.message : 'Failed to load rosters.');
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [leagueId]);
 
   useEffect(() => {
     if (!rosterId) {
@@ -290,8 +294,11 @@ export default function GameSetupPage() {
       awayDefArchetype,
     };
     try {
-      const result = await apiClient.post<SimulateGameResponseDto>('/games/simulate', body);
-      router.push(`/games/${result.gameId}/box-score`);
+      const result = await apiClient.post<SimulateGameResponseDto>(
+        `/leagues/${leagueId}/games/simulate`,
+        body,
+      );
+      router.push(`/leagues/${leagueId}/games/${result.gameId}/box-score`);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.errorCode === 'UNFILLABLE_POSITIONS') {

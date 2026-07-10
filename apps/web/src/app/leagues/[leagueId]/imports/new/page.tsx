@@ -4,7 +4,7 @@
 // state, and a client-side fetch + router redirect on success.
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { apiClient, ApiError } from '@/lib/api-client';
 import type { UploadRosterResponseDto } from '@heritage-saturday/shared';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ const ACCEPTED_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xls'];
 
 export default function NewImportPage() {
   const router = useRouter();
+  const { leagueId } = useParams<{ leagueId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -32,8 +33,11 @@ export default function NewImportPage() {
     form.append('file', selectedFile);
 
     try {
-      const result = await apiClient.postForm<UploadRosterResponseDto>('/imports/roster', form);
-      router.push(`/imports/${result.importId}/preview`);
+      const result = await apiClient.postForm<UploadRosterResponseDto>(
+        `/leagues/${leagueId}/imports/roster`,
+        form,
+      );
+      router.push(`/leagues/${leagueId}/imports/${result.importId}/preview`);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.errorCode === 'UNSUPPORTED_FILE_FORMAT') {

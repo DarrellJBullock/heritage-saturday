@@ -16,19 +16,16 @@ export async function SiteNav() {
   return (
     <header className="border-b bg-card">
       <nav className="mx-auto max-w-3xl px-4 py-3 flex flex-wrap items-center gap-4 text-sm">
-        <Link href="/" className="font-semibold">
+        <Link href="/leagues" className="font-semibold">
           Heritage Saturday
         </Link>
         {user?.id && (
           <>
-            <Link href="/imports" className="text-muted-foreground hover:text-foreground">
-              Imports
+            <Link href="/leagues" className="text-muted-foreground hover:text-foreground">
+              Leagues
             </Link>
-            <Link href="/imports/new" className="text-muted-foreground hover:text-foreground">
-              Import Roster
-            </Link>
-            <Link href="/games/new" className="text-muted-foreground hover:text-foreground">
-              New Game
+            <Link href="/leagues/new" className="text-muted-foreground hover:text-foreground">
+              New League
             </Link>
             <div className="ml-auto flex items-center gap-2">
               <span className="text-muted-foreground hidden sm:inline">{user.email}</span>

@@ -14,7 +14,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 
 interface PageProps {
-  params: Promise<{ id: string }>;
+  params: Promise<{ leagueId: string; id: string }>;
 }
 
 function playerStatLine(p: PlayerGameStatsDto): string {
@@ -49,13 +49,13 @@ function playerStatLine(p: PlayerGameStatsDto): string {
  * this fetches directly on the server.
  */
 export default async function BoxScorePage({ params }: PageProps) {
-  const { id } = await params;
+  const { leagueId, id } = await params;
 
   let box: BoxScoreResponseDto | null = null;
   let error: string | null = null;
 
   try {
-    box = await serverApiClient.get<BoxScoreResponseDto>(`/games/${id}/box-score`);
+    box = await serverApiClient.get<BoxScoreResponseDto>(`/leagues/${leagueId}/games/${id}/box-score`);
   } catch (err) {
     error = err instanceof ApiError ? err.message : 'Failed to load box score.';
   }

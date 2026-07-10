@@ -180,7 +180,7 @@ async function proxyIdentitySection(rosterIdA, importIdA) {
 
   // Guards a real regression: with no `authorized` callback, Auth.js defaults to authorized and
   // `export default auth` lets every signed-out page render.
-  const anonPage = await web('/imports');
+  const anonPage = await web('/leagues');
   ok('signed-out page request redirects to /signin (the `authorized` callback is wired)',
     anonPage.status === 307 && (anonPage.location ?? '').includes('/signin'),
     { status: anonPage.status, location: anonPage.location });
@@ -192,7 +192,7 @@ async function proxyIdentitySection(rosterIdA, importIdA) {
 
   // The signed-out check above cannot tell a correctly wired `authorized` callback from one
   // hardcoded to false — both redirect. Only this says the gate admits as well as rejects.
-  const authedPage = await web('/imports', { jar });
+  const authedPage = await web('/leagues', { jar });
   ok('signed-in page request renders (200), so the gate admits and does not merely reject',
     authedPage.status === 200, { status: authedPage.status, location: authedPage.location });
 
