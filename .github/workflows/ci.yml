@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch makes the in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # apps/api reads DATABASE_URL straight from process.env (schema.prisma uses env()),
+  # so no .env file is needed — which is good, because .env is gitignored.
+  # Note the port: 5432 here, not the 5433 used locally to dodge a host Postgres.
+  DATABASE_URL: postgresql://heritage:heritage@localhost:5432/heritage_saturday?schema=public
+
+jobs:
+  check:
+    name: Build, typecheck, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # No postinstall hook generates the Prisma client, and apps/api's typecheck
+      # imports @prisma/client types. Must run before typecheck, not after.
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w @heritage-saturday/api
+
+      # Deliberately a cold build: `npm ci` leaves no dist/, which is exactly the state
+      # that once exposed a build-ordering bug (apps/* compiled before packages/* under
+      # `--workspaces`). The root build script orders the layers; this proves it holds.
+      - name: Build (dependency order, from cold)
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+  e2e:
+    name: End-to-end (real Postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: heritage
+          POSTGRES_PASSWORD: heritage
+          POSTGRES_DB: heritage_saturday
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U heritage -d heritage_saturday"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w @heritage-saturday/api
+
+      - name: Build
+        run: npm run build
+
+      - name: Run migrations
+        run: npx prisma migrate deploy
+        working-directory: apps/api
+
+      # Auth is a stub: the API trusts an x-user-id header and every FK requires that
+      # User row to exist. The e2e suite drives the API as qa-user-a / qa-user-b, so
+      # without this step every request 500s on a foreign-key violation.
+      - name: Seed stub-auth users
+        run: npx prisma db seed
+        working-directory: apps/api
+
+      - name: Start API
+        run: |
+          node apps/api/dist/main.js &
+          echo "API_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for API
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:3001/imports -H 'x-user-id: qa-user-a'; then
+              echo "API is up"; exit 0
+            fi
+            # Fail fast if the process died rather than burning the full timeout.
+            if ! kill -0 "$API_PID" 2>/dev/null; then
+              echo "API process exited before becoming ready"; exit 1
+            fi
+            sleep 1
+          done
+          echo "API did not become ready within 60s"; exit 1
+
+      - name: E2E suite
+        run: node apps/api/test/e2e/run.mjs
+
+      - name: Stop API
+        if: always()
+        run: kill "$API_PID" 2>/dev/null || true
