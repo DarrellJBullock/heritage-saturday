@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { ApiError } from '@/lib/api-client';
 import { serverApiClient } from '@/lib/api-client.server';
 import type { BoxScoreResponseDto, PlayerGameStatsDto } from '@heritage-saturday/shared';
@@ -180,7 +181,12 @@ export default async function BoxScorePage({ params }: PageProps) {
                 {box!.playerStats[side].map((p) => (
                   <TableRow key={p.playerId}>
                     <TableCell>
-                      {p.firstName} {p.lastName}
+                      <Link
+                        href={`/leagues/${leagueId}/players/${p.playerId}`}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        {p.firstName} {p.lastName}
+                      </Link>
                     </TableCell>
                     <TableCell>{p.position}</TableCell>
                     <TableCell className="text-sm">{playerStatLine(p)}</TableCell>
