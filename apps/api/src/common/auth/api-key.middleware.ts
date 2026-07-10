@@ -1,5 +1,22 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
+
+/**
+ * Constant-time string equality.
+ *
+ * `===` bails on the first differing byte, so how long it takes to reject a guess reveals
+ * how much of that guess was right. Comparing SHA-256 digests instead of the raw strings is
+ * what makes this safe for inputs of *different* lengths: `timingSafeEqual` throws unless
+ * both buffers are the same size, and branching on `a.length !== b.length` would leak the
+ * secret's length. Digests are always 32 bytes, so neither the comparison nor the guard
+ * depends on the input.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  const digestA = createHash('sha256').update(a, 'utf8').digest();
+  const digestB = createHash('sha256').update(b, 'utf8').digest();
+  return timingSafeEqual(digestA, digestB);
+}
 
 /**
  * Shared-secret gate in front of AuthStubMiddleware.
@@ -53,8 +70,9 @@ export class ApiKeyMiddleware implements NestMiddleware {
       return;
     }
 
+    // Absence is not a secret, so short-circuiting here leaks nothing worth having.
     const provided = req.header('x-api-key');
-    if (provided !== secret) {
+    if (provided === undefined || !constantTimeEqual(provided, secret)) {
       throw new UnauthorizedException({
         statusCode: 401,
         error: 'UNAUTHENTICATED',
