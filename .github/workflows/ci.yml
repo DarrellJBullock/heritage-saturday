@@ -47,6 +47,47 @@ jobs:
       - name: Unit tests
         run: npm test
 
+  worker-smoke:
+    name: Worker smoke (real Redis)
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Only what the worker needs: the engine it shares with the API, and the worker
+      # itself. No Prisma, no Next build — the worker deliberately never touches the DB.
+      - name: Build worker and its packages
+        run: |
+          npm run build:packages
+          npm run build -w @heritage-saturday/worker
+
+      # Covers the transport, not the pure processor (that is in `npm test`): a job
+      # round-trips through Redis, determinism survives JSON serialization through the
+      # queue, and an unknown job name fails loudly instead of vanishing.
+      - name: Worker smoke test
+        run: npm run smoke -w @heritage-saturday/worker
+
   e2e:
     name: End-to-end (real Postgres)
     runs-on: ubuntu-latest
