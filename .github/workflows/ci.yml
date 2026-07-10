@@ -258,10 +258,11 @@ jobs:
         run: npx prisma migrate deploy
         working-directory: apps/api
 
-      # Auth is a stub: the API trusts an x-user-id header and every FK requires that
-      # User row to exist. The e2e suite drives the API as qa-user-a / qa-user-b, so
-      # without this step every request 500s on a foreign-key violation.
-      - name: Seed stub-auth users
+      # The API trusts an x-user-id header (only apps/web may assert it) and every FK requires
+      # that User row to exist. The e2e suite drives the API as qa-user-a / qa-user-b, and
+      # apps/web's dev-login signs in as dev-user-1, so without this step every request 500s
+      # on a foreign-key violation.
+      - name: Seed fixture users
         run: npx prisma db seed
         working-directory: apps/api
 
@@ -284,8 +285,46 @@ jobs:
           done
           echo "API did not become ready within 60s"; exit 1
 
+      # apps/web must run for the proxy identity/spoof and page-gating checks, which the suite
+      # treats as mandatory under CI (see proxyIdentitySection). They are the only place the
+      # header-forging defence and the `authorized` callback are exercised at all.
+      #
+      # `next dev`, not `next start`: dev-login is the identity those checks sign in as, and it
+      # is deliberately impossible under a production build — `next start` sets
+      # NODE_ENV=production, where assertDevLoginConfig() refuses to boot with ALLOW_DEV_LOGIN=true.
+      - name: Start web
+        env:
+          API_URL: http://localhost:3001
+          ALLOW_DEV_LOGIN: 'true'
+        run: |
+          # Generated once, here: sessions never outlive the job, and a hardcoded secret in a
+          # public repo would become a real one the day someone copies this file. Auth.js
+          # refuses to start without it.
+          export AUTH_SECRET="$(openssl rand -base64 32)"
+          npm run dev -w @heritage-saturday/web &
+          echo "WEB_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for web
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:3000/signin; then
+              echo "web is up"; exit 0
+            fi
+            if ! kill -0 "$WEB_PID" 2>/dev/null; then
+              echo "web process exited before becoming ready"; exit 1
+            fi
+            sleep 1
+          done
+          echo "web did not become ready within 60s"; exit 1
+
       - name: E2E suite
+        env:
+          WEB_BASE: http://localhost:3000
         run: node apps/api/test/e2e/run.mjs
+
+      - name: Stop web
+        if: always()
+        run: kill "$WEB_PID" 2>/dev/null || true
 
       - name: Stop API
         if: always()

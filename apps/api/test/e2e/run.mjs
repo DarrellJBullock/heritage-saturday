@@ -183,6 +183,12 @@ async function proxyIdentitySection(rosterIdA, importIdA) {
   ok('dev-login establishes a session for dev-user-1',
     session.body?.user?.id === DEV_LOGIN_USER, session.body);
 
+  // The signed-out check above cannot tell a correctly wired `authorized` callback from one
+  // hardcoded to false — both redirect. Only this says the gate admits as well as rejects.
+  const authedPage = await web('/imports', { jar });
+  ok('signed-in page request renders (200), so the gate admits and does not merely reject',
+    authedPage.status === 200, { status: authedPage.status, location: authedPage.location });
+
   // The honest request: whatever dev-user-1 is allowed to see.
   const honest = await web('/api/proxy/rosters', { jar });
   ok('signed-in proxy request reaches the API (200)', honest.status === 200, honest.body);
