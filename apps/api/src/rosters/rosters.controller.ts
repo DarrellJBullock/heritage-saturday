@@ -2,8 +2,8 @@ import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { RostersService } from './rosters.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { RequestUser } from '../common/auth/trusted-proxy-user.middleware';
-import { RosterOwnershipGuard } from '../common/guards/ownership.guards';
 import { RosterReadAccessGuard } from '../common/guards/read-access.guards';
+import { RosterCapabilityGuard, RequireCapability } from '../common/guards/capability.guards';
 import { SetRosterVisibilityRequestDto, VISIBILITIES } from '@heritage-saturday/shared';
 import { DomainException } from '../common/errors/domain-exception';
 
@@ -23,9 +23,11 @@ export class RostersController {
     return this.rostersService.getDetail(id);
   }
 
-  // Owner-only: promote/demote a roster's visibility. Owner-only guard, not the read guard.
+  // Promote/demote a roster's visibility — the `roster:visibility` capability
+  // (owner/commissioner/manager), resolved through the roster's league.
   @Patch(':id/visibility')
-  @UseGuards(RosterOwnershipGuard)
+  @RequireCapability('roster:visibility')
+  @UseGuards(RosterCapabilityGuard)
   setVisibility(@Param('id') id: string, @Body() dto: SetRosterVisibilityRequestDto) {
     if (!(VISIBILITIES as readonly string[]).includes(dto?.visibility)) {
       throw new DomainException(400, 'BAD_REQUEST', `visibility must be one of ${VISIBILITIES.join(', ')}`);

@@ -147,17 +147,27 @@ model League {
   @@index([ownerId])
 }
 
+// Roles a member can hold in a league. The OWNER is implicit via League.ownerId and is NOT a
+// stored role — this enum is only for non-owner members. Capability by role (see
+// packages/shared ROLE_CAPABILITIES): COMMISSIONER runs the league (import, roster visibility,
+// simulate, schedule), MANAGER edits content (import, roster visibility), VIEWER reads only.
+enum LeagueRole {
+  COMMISSIONER
+  MANAGER
+  VIEWER
+}
+
 // Additional users granted access to a league beyond its owner. The owner is implicit via
-// League.ownerId and is NOT stored here. A member can read the league's LEAGUE-visible rosters
-// (and their teams/players/depth-charts); they cannot mutate anything. Roles (commissioner,
-// manager) are a later capability — today a member is a viewer.
+// League.ownerId and is NOT stored here. Every member can read the league's LEAGUE-visible
+// rosters; their role determines which mutations they may perform.
 model LeagueMember {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   leagueId  String
-  league    League   @relation(fields: [leagueId], references: [id])
+  league    League     @relation(fields: [leagueId], references: [id])
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
+  user      User       @relation(fields: [userId], references: [id])
+  role      LeagueRole @default(VIEWER)
+  createdAt DateTime   @default(now())
 
   @@unique([leagueId, userId])
   @@index([userId])

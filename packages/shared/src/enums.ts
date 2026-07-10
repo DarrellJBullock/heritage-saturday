@@ -37,9 +37,32 @@ export type LeagueSize = (typeof LEAGUE_SIZES)[number];
 export const VISIBILITIES = ['PRIVATE', 'LEAGUE'] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
 
-// A caller's relationship to a league: its owner, or a member with read access.
-export const LEAGUE_ROLES = ['OWNER', 'MEMBER'] as const;
+// A caller's role in a league. OWNER is implicit (League.ownerId) and full-access; the other
+// three are stored on LeagueMember and delegate a decreasing set of powers.
+export const LEAGUE_ROLES = ['OWNER', 'COMMISSIONER', 'MANAGER', 'VIEWER'] as const;
 export type LeagueRole = (typeof LEAGUE_ROLES)[number];
+
+// Roles an owner can assign to a member. OWNER is never assignable — it is the league creator.
+export const MEMBER_ROLES = ['COMMISSIONER', 'MANAGER', 'VIEWER'] as const;
+export type MemberRole = (typeof MEMBER_ROLES)[number];
+
+// Mutating capabilities gated by role. Reading LEAGUE-visible content is implicit for every
+// role and handled by the read-access guards, so it is not listed here.
+export const CAPABILITIES = ['import', 'roster:visibility', 'simulate', 'members:manage'] as const;
+export type Capability = (typeof CAPABILITIES)[number];
+
+// Which capabilities each role holds. Single source of truth for both the API guards and the
+// web UI gating. Owner has everything; each lower role drops the most privileged capability.
+export const ROLE_CAPABILITIES: Record<LeagueRole, readonly Capability[]> = {
+  OWNER: ['import', 'roster:visibility', 'simulate', 'members:manage'],
+  COMMISSIONER: ['import', 'roster:visibility', 'simulate'],
+  MANAGER: ['import', 'roster:visibility'],
+  VIEWER: [],
+};
+
+export function hasCapability(role: LeagueRole, capability: Capability): boolean {
+  return ROLE_CAPABILITIES[role].includes(capability);
+}
 
 export const OFFENSIVE_ARCHETYPES = [
   'BALANCED', 'POWER_RUN', 'SPREAD', 'VERTICAL_PASSING',

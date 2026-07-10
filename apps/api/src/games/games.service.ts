@@ -37,15 +37,14 @@ export class GamesService {
       this.prisma.team.findUnique({ where: { id: dto.awayTeamId }, include: { roster: true } }),
     ]);
 
-    if (!homeTeam || homeTeam.roster.ownerId !== ownerId) {
-      throw new DomainException(400, 'BAD_REQUEST', 'homeTeamId is not owned by the caller');
+    // Authorization to simulate in this league is enforced by the capability guard on the route.
+    // Here we only require both teams to belong to that league — not that the caller owns them,
+    // so a commissioner can play games with the owner's teams.
+    if (!homeTeam || homeTeam.roster.leagueId !== leagueId) {
+      throw new DomainException(400, 'BAD_REQUEST', 'homeTeamId is not a team in this league');
     }
-    if (!awayTeam || awayTeam.roster.ownerId !== ownerId) {
-      throw new DomainException(400, 'BAD_REQUEST', 'awayTeamId is not owned by the caller');
-    }
-    // A game is played within one league: both teams must belong to the league in the route.
-    if (homeTeam.roster.leagueId !== leagueId || awayTeam.roster.leagueId !== leagueId) {
-      throw new DomainException(400, 'BAD_REQUEST', 'Both teams must belong to this league');
+    if (!awayTeam || awayTeam.roster.leagueId !== leagueId) {
+      throw new DomainException(400, 'BAD_REQUEST', 'awayTeamId is not a team in this league');
     }
 
     const [homeLegality, awayLegality] = await Promise.all([
@@ -241,7 +240,7 @@ export class GamesService {
     }
   }
 
-  async getBoxScore(gameId: string): Promise<BoxScoreResponseDto> {
+  async getBoxScore(gameId: string, leagueId: string): Promise<BoxScoreResponseDto> {
     const game = await this.prisma.game.findUnique({
       where: { id: gameId },
       include: {
@@ -257,7 +256,9 @@ export class GamesService {
       },
     });
 
-    if (!game) {
+    // Access to the league is enforced by the read-access guard; also confirm the game is
+    // actually in that league so a game id from elsewhere can't be read through this path.
+    if (!game || game.leagueId !== leagueId) {
       throw new DomainException(404, 'NOT_FOUND', 'Game not found');
     }
 
