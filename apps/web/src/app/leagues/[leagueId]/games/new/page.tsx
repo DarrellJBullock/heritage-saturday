@@ -235,8 +235,9 @@ export default function GameSetupPage() {
     apiClient
       .get<LeagueDetailDto>(`/leagues/${leagueId}`)
       .then((league) => {
-        setRosters(league.rosters);
-        if (!rosterId && league.rosters.length > 0) setRosterId(league.rosters[0].id);
+        const active = league.rosters.filter((r) => !r.archived);
+        setRosters(active);
+        if (!rosterId && active.length > 0) setRosterId(active[0].id);
       })
       .catch((err) => {
         setLoadError(err instanceof ApiError ? err.message : 'Failed to load rosters.');

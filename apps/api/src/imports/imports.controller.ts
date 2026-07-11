@@ -53,6 +53,12 @@ export class ImportsController {
     return this.importsService.commit(id, user.id, leagueId);
   }
 
+  @Post(':id/rollback')
+  @HttpCode(HttpStatus.OK)
+  rollback(@Param('leagueId') leagueId: string, @Param('id') id: string) {
+    return this.importsService.rollback(id, leagueId);
+  }
+
   @Get()
   list(@Param('leagueId') leagueId: string) {
     return this.importsService.listForLeague(leagueId);

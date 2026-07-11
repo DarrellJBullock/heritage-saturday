@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ImportRollback } from './import-rollback';
 
 /**
  * Server Component: read-only history list, no client interactivity needed —
@@ -82,6 +83,9 @@ export default async function ImportsHistoryPage({
                 >
                   Review
                 </Button>
+              )}
+              {item.status === 'COMMITTED' && (
+                <ImportRollback leagueId={leagueId} importId={item.importId} />
               )}
             </CardContent>
           </Card>

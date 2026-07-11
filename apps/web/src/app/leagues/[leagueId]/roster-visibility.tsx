@@ -1,7 +1,7 @@
 'use client';
 
-// Client Component: the owner's per-roster visibility control. Promoting to LEAGUE lets league
-// members read the roster; demoting to PRIVATE hides it again.
+// Client Component: the owner's per-roster controls — visibility (League/Private), archive,
+// restore, and permanent delete. Active and archived rosters are shown separately.
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -17,15 +17,14 @@ export function RosterVisibility({ rosters }: { rosters: RosterListItemDto[] }) 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function toggle(roster: RosterListItemDto) {
-    const next = roster.visibility === 'LEAGUE' ? 'PRIVATE' : 'LEAGUE';
-    setBusyId(roster.id);
+  async function act(rosterId: string, fn: () => Promise<unknown>) {
+    setBusyId(rosterId);
     setError(null);
     try {
-      await apiClient.patch(`/rosters/${roster.id}/visibility`, { visibility: next });
+      await fn();
       router.refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not change visibility.');
+      setError(err instanceof ApiError ? err.message : 'Action failed.');
     } finally {
       setBusyId(null);
     }
@@ -33,28 +32,84 @@ export function RosterVisibility({ rosters }: { rosters: RosterListItemDto[] }) 
 
   if (rosters.length === 0) return null;
 
+  const active = rosters.filter((r) => !r.archived);
+  const archived = rosters.filter((r) => r.archived);
+
+  const row = (r: RosterListItemDto) => (
+    <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
+      <span className="flex items-center gap-2 truncate">
+        {r.name}
+        <Badge variant={r.visibility === 'LEAGUE' ? 'default' : 'secondary'}>
+          {r.visibility === 'LEAGUE' ? 'League' : 'Private'}
+        </Badge>
+      </span>
+      <span className="flex items-center gap-1">
+        {!r.archived && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busyId === r.id}
+            onClick={() =>
+              act(r.id, () =>
+                apiClient.patch(`/rosters/${r.id}/visibility`, {
+                  visibility: r.visibility === 'LEAGUE' ? 'PRIVATE' : 'LEAGUE',
+                }),
+              )
+            }
+          >
+            {r.visibility === 'LEAGUE' ? 'Make Private' : 'Promote'}
+          </Button>
+        )}
+        {r.archived ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busyId === r.id}
+            onClick={() => act(r.id, () => apiClient.patch(`/rosters/${r.id}/restore`))}
+          >
+            Restore
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busyId === r.id}
+            onClick={() => act(r.id, () => apiClient.patch(`/rosters/${r.id}/archive`))}
+          >
+            Archive
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busyId === r.id}
+          onClick={() => {
+            if (!confirm(`Permanently delete "${r.name}"? This cannot be undone.`)) return;
+            void act(r.id, () => apiClient.delete(`/rosters/${r.id}`));
+          }}
+        >
+          Delete
+        </Button>
+      </span>
+    </div>
+  );
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Rosters</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
-        {rosters.map((r) => (
-          <div key={r.id} className="flex items-center justify-between text-sm">
-            <span className="flex items-center gap-2">
-              {r.name}
-              <Badge variant={r.visibility === 'LEAGUE' ? 'default' : 'secondary'}>
-                {r.visibility === 'LEAGUE' ? 'League' : 'Private'}
-              </Badge>
-            </span>
-            <Button size="sm" variant="outline" disabled={busyId === r.id} onClick={() => toggle(r)}>
-              {r.visibility === 'LEAGUE' ? 'Make Private' : 'Promote to League'}
-            </Button>
-          </div>
-        ))}
+        {active.map(row)}
+        {archived.length > 0 && (
+          <>
+            <p className="text-muted-foreground text-xs font-medium uppercase mt-2">Archived</p>
+            {archived.map(row)}
+          </>
+        )}
         {error && (
           <Alert variant="destructive">
-            <AlertTitle>Visibility error</AlertTitle>
+            <AlertTitle>Roster action failed</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
