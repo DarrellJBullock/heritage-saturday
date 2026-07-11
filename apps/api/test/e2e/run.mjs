@@ -228,6 +228,29 @@ async function main() {
   console.log(`  apps/web base: ${WEB ?? '(not set — proxy identity checks skipped)'}`);
 
   // -------------------------------------------------------------------
+  section('Auth — POST /auth/session establishes identity and must NOT require x-user-id');
+  // -------------------------------------------------------------------
+  // The one route with no x-user-id: it *mints* the id every other route asserts. Called only
+  // by apps/web's Auth.js jwt callback on Google sign-in — a path neither dev-login nor the
+  // rest of this suite exercises, so it needs its own check. (Regression: NestMiddleware
+  // exclude() did not fire under forRoutes('*'), so /auth/session 401'd on a real login.)
+  const noUserSession = await api('POST', '/auth/session', {
+    body: { provider: 'google', subject: 'qa-oauth-subject-1', email: 'qa-oauth-1@example.test' },
+  });
+  ok('POST /auth/session succeeds with NO x-user-id header (200 + userId)',
+    noUserSession.status === 200 && typeof noUserSession.body?.userId === 'string',
+    noUserSession);
+  const sameSession = await api('POST', '/auth/session', {
+    body: { provider: 'google', subject: 'qa-oauth-subject-1', email: 'qa-oauth-1@example.test' },
+  });
+  ok('resolving the same identity is idempotent (same userId)',
+    sameSession.status === 200 && sameSession.body?.userId === noUserSession.body?.userId,
+    { first: noUserSession.body?.userId, second: sameSession.body?.userId });
+  const badSession = await api('POST', '/auth/session', { body: { provider: 'google' } });
+  ok('POST /auth/session still validates its body (400 without subject/email)',
+    badSession.status === 400, badSession);
+
+  // -------------------------------------------------------------------
   section('Capability 2 — leagues: create + list, and every roster/game nests under one');
   // -------------------------------------------------------------------
   const leagueA = await api('POST', '/leagues', { user: USER_A, body: { name: 'Test League A', size: 8 } });
