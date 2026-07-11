@@ -16,7 +16,9 @@ import { auth } from '@/auth';
  * they already run on the server and can hold the secret themselves.
  */
 
-const API_URL = process.env.API_URL ?? 'http://localhost:3001';
+// Trailing slash stripped: the target is built as `${API_URL}/${path}`, so a value ending in
+// `/` yields a `//` double slash that routes differently and breaks every proxied call.
+const API_URL = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/+$/, '');
 const API_SHARED_SECRET = process.env.API_SHARED_SECRET;
 
 // Hop-by-hop and length headers must not be forwarded verbatim: the body is re-encoded here,
