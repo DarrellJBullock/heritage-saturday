@@ -79,7 +79,7 @@ export default async function TeamPage({
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">{team.teamName}</h1>
+          <h1 className="text-xl font-bold tracking-tight">{team.teamName}</h1>
           {subtitle && <p className="text-muted-foreground text-sm mt-1">{subtitle}</p>}
         </div>
         {team.coachName && (

@@ -43,7 +43,7 @@ export default async function LeadersPage({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold">Season Leaders</h1>
+        <h1 className="text-xl font-bold tracking-tight">Season Leaders</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Top players by category across completed season games.
         </p>
@@ -78,7 +78,9 @@ export default async function LeadersPage({
                   <TableBody>
                     {c.rows.map((r, i) => (
                       <TableRow key={r.playerId}>
-                        <TableCell className="text-muted-foreground text-right tabular-nums">
+                        <TableCell
+                          className={`text-right tabular-nums ${i === 0 ? 'text-brand-accent font-bold' : 'text-muted-foreground'}`}
+                        >
                           {i + 1}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">

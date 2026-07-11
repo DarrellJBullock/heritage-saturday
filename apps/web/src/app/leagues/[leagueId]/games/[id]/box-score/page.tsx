@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
+import { SectionHeading } from '@/components/section-heading';
 import { WinProbChart } from './win-prob-chart';
 
 // Accent color per drive outcome for the drive feed.
@@ -79,30 +80,43 @@ export default async function BoxScorePage({ params }: PageProps) {
     );
   }
 
-  const winner =
-    box.finalScore.home === box.finalScore.away
-      ? 'Tie'
-      : box.finalScore.home > box.finalScore.away
-        ? box.teams.home.teamName
-        : box.teams.away.teamName;
+  const tie = box.finalScore.home === box.finalScore.away;
+  const homeWon = !tie && box.finalScore.home > box.finalScore.away;
+
+  // Away over home, scoreboard-style, with the winner's score in gold.
+  const scoreRows = [
+    { team: box.teams.away, score: box.finalScore.away, won: !tie && !homeWon },
+    { team: box.teams.home, score: box.finalScore.home, won: homeWon },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">
-            {box.teams.home.teamName} {box.finalScore.home} — {box.finalScore.away}{' '}
-            {box.teams.away.teamName}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <p className="text-sm">{box.recap}</p>
-          <p className="text-xs text-muted-foreground">
-            {winner === 'Tie' ? 'Final: Tie game' : `Winner: ${winner}`} · seed{' '}
-            <code>{box.seed}</code>
-          </p>
-        </CardContent>
-      </Card>
+      <div className="from-brand-strong via-brand to-brand-strong animate-in fade-in slide-in-from-bottom-2 rounded-2xl bg-gradient-to-br p-6 text-white shadow-lg duration-500">
+        <p className="text-[11px] font-medium uppercase tracking-widest text-white/50">
+          Final{tie ? ' · Tie' : ''}
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          {scoreRows.map(({ team, score, won }) => (
+            <div key={team.id} className="flex items-center justify-between gap-4">
+              <Link
+                href={`/leagues/${leagueId}/teams/${team.id}`}
+                className={`font-semibold hover:underline ${won ? 'text-white' : 'text-white/80'}`}
+              >
+                {team.teamName}
+              </Link>
+              <span
+                className={`text-3xl font-bold tabular-nums ${won ? 'text-brand-accent' : 'text-white/90'}`}
+              >
+                {score}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-sm text-white/80">{box.recap}</p>
+        <p className="mt-1 text-xs text-white/40">
+          seed <code>{box.seed}</code>
+        </p>
+      </div>
 
       {/* Win probability + top performers side by side on wide screens. */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -149,7 +163,7 @@ export default async function BoxScorePage({ params }: PageProps) {
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold mb-2">Drive by Drive</h2>
+        <SectionHeading>Drive by Drive</SectionHeading>
         <div className="flex flex-col gap-1">
           {box.drives.map((d, i) => (
             <div key={i} className="flex items-center justify-between gap-2 border-b py-1 text-sm">
@@ -172,7 +186,7 @@ export default async function BoxScorePage({ params }: PageProps) {
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold mb-2">Quarter-by-Quarter</h2>
+        <SectionHeading>Quarter-by-Quarter</SectionHeading>
         <Table>
           <TableHeader>
             <TableRow>
@@ -203,7 +217,7 @@ export default async function BoxScorePage({ params }: PageProps) {
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold mb-2">Team Stats</h2>
+        <SectionHeading>Team Stats</SectionHeading>
         <Table>
           <TableHeader>
             <TableRow>
@@ -240,9 +254,7 @@ export default async function BoxScorePage({ params }: PageProps) {
 
       {(['home', 'away'] as const).map((side) => (
         <div key={side}>
-          <h2 className="text-lg font-semibold mb-2">
-            {box!.teams[side].teamName} — Player Stats
-          </h2>
+          <SectionHeading>{box!.teams[side].teamName} — Player Stats</SectionHeading>
           {box!.playerStats[side].length === 0 ? (
             <p className="text-sm text-muted-foreground">No recorded player activity.</p>
           ) : (

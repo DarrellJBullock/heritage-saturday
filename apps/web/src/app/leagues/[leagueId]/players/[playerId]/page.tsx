@@ -64,9 +64,11 @@ export default async function PlayerPage({
     <div className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <PlayerAvatar url={player.headshotUrl} name={`${player.firstName} ${player.lastName}`} size={64} />
+          <span className="ring-brand-accent/50 ring-offset-background inline-flex rounded-full ring-2 ring-offset-2">
+            <PlayerAvatar url={player.headshotUrl} name={`${player.firstName} ${player.lastName}`} size={64} />
+          </span>
           <div>
-            <h1 className="text-xl font-semibold">
+            <h1 className="text-xl font-bold tracking-tight">
               #{player.jerseyNumber} {player.firstName} {player.lastName}
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
