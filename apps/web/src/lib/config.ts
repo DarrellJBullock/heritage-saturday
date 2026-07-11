@@ -28,8 +28,11 @@ export const IS_SERVER = typeof window === 'undefined';
  * Server Components already run on the server, so they call the API directly and hold the
  * secret themselves. `API_URL` is read at runtime and is deliberately not NEXT_PUBLIC_*.
  */
+// Strip any trailing slash: callers append paths as `${API_BASE_URL}/auth/session`, so a
+// value like `https://api.example.com/` would produce a `//auth/session` double slash that
+// routes differently from `/auth/session` and breaks every API call. Normalize it once here.
 export const API_BASE_URL = IS_SERVER
-  ? process.env.API_URL ?? 'http://localhost:3001'
+  ? (process.env.API_URL ?? 'http://localhost:3001').replace(/\/+$/, '')
   : '/api/proxy';
 
 /** Server-only. Never referenced in a browser code path — see api-client's IS_SERVER guard. */

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { DomainException } from '../common/errors/domain-exception';
-import { PlayerDto, TeamDetailDto, TeamSummaryDto } from '@heritage-saturday/shared';
+import { PlayerDto, RosterPlayerDto, TeamDetailDto, TeamSummaryDto } from '@heritage-saturday/shared';
+import { Player } from '@prisma/client';
 import { isLeagueMember } from '../common/guards/base-read-access.guard';
 
 @Injectable()
@@ -34,7 +35,7 @@ export class TeamsService {
       primaryColor: team.primaryColor,
       secondaryColor: team.secondaryColor,
       coachName: team.coachName,
-      players: team.players.map(toPlayerDto),
+      players: team.players.map(toRosterPlayerDto),
       band: team.band
         ? { name: team.band.name, style: team.band.style, chant: team.band.chant, tradition: team.band.tradition }
         : null,
@@ -105,5 +106,27 @@ function toPlayerDto(p: {
     jerseyNumber: p.jerseyNumber,
     overallRating: p.overallRating,
     archetype: p.archetype,
+  };
+}
+
+/** A roster row with every rating attribute, for the team page's ratings grid. */
+function toRosterPlayerDto(p: Player): RosterPlayerDto {
+  return {
+    ...toPlayerDto(p),
+    speed: p.speed,
+    strength: p.strength,
+    awareness: p.awareness,
+    throwPower: p.throwPower,
+    throwAccuracy: p.throwAccuracy,
+    catching: p.catching,
+    routeRunning: p.routeRunning,
+    carry: p.carry,
+    trucking: p.trucking,
+    passBlock: p.passBlock,
+    runBlock: p.runBlock,
+    tackle: p.tackle,
+    coverage: p.coverage,
+    kickPower: p.kickPower,
+    kickAccuracy: p.kickAccuracy,
   };
 }
