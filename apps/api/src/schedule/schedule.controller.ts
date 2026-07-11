@@ -39,4 +39,10 @@ export class ScheduleController {
   standings(@Param('leagueId') leagueId: string) {
     return this.scheduleService.getStandings(leagueId);
   }
+
+  @Get('leaders')
+  @UseGuards(LeagueByParamReadAccessGuard)
+  leaders(@Param('leagueId') leagueId: string) {
+    return this.scheduleService.getLeaders(leagueId);
+  }
 }

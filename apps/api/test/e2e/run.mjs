@@ -484,11 +484,32 @@ async function main() {
     allRowsF.length === 8 && allRowsF.every((r) => r.wins + r.losses === 7),
     allRowsF.map((r) => `${r.wins}-${r.losses}`));
 
+  // Season stat leaders — aggregated over the completed season games.
+  const leaders = await api('GET', `/leagues/${GEN}/leaders`, { user: USER_A });
+  const catKeys = leaders.body?.categories?.map((c) => c.key) ?? [];
+  ok('GET /leaders returns all seven categories',
+    leaders.status === 200 &&
+      ['passYards', 'rushYards', 'receivingYards', 'interceptions', 'sacks', 'fieldGoals', 'points'].every((k) => catKeys.includes(k)),
+    catKeys);
+  const passCat = leaders.body?.categories?.find((c) => c.key === 'passYards');
+  ok('leaders have rows after a full season, capped at 10 and sorted descending',
+    passCat && passCat.rows.length > 0 && passCat.rows.length <= 10 &&
+      passCat.rows.every((r, i, a) => i === 0 || a[i - 1].value >= r.value) &&
+      passCat.rows.every((r) => r.value > 0 && !!r.playerName && !!r.teamName),
+    passCat?.rows?.map((r) => r.value));
+  const pointsCat = leaders.body?.categories?.find((c) => c.key === 'points');
+  ok('points leaders are populated and descending',
+    pointsCat && pointsCat.rows.length > 0 &&
+      pointsCat.rows.every((r, i, a) => i === 0 || a[i - 1].value >= r.value),
+    pointsCat?.rows?.slice(0, 3).map((r) => `${r.playerName}:${r.value}`));
+
   // Ownership: user B cannot read or drive user A's season.
   const schedAsB = await api('GET', `/leagues/${GEN}/schedule`, { user: USER_B });
   ok('user B gets 404 reading user A\'s schedule', schedAsB.status === 404, schedAsB.body);
   const standAsB = await api('GET', `/leagues/${GEN}/standings`, { user: USER_B });
   ok('user B gets 404 reading user A\'s standings', standAsB.status === 404, standAsB.body);
+  const leadersAsB = await api('GET', `/leagues/${GEN}/leaders`, { user: USER_B });
+  ok('user B gets 404 reading user A\'s leaders', leadersAsB.status === 404, leadersAsB.body);
   const simAsB = await api('POST', `/leagues/${GEN}/schedule/simulate-week`, { user: USER_B });
   ok('user B gets 404 trying to simulate user A\'s season', simAsB.status === 404, simAsB.body);
 

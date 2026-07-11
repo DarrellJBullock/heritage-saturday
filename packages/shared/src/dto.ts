@@ -398,3 +398,32 @@ export interface StandingsResponseDto {
   // One group per conference/division; rows sorted by wins desc, then differential desc.
   groups: { conference: string | null; division: string | null; rows: StandingRowDto[] }[];
 }
+
+// ---------------------------------------------------------------------------
+// Season stat leaders
+// ---------------------------------------------------------------------------
+
+export interface LeaderRowDto {
+  playerId: string;
+  playerName: string;
+  teamId: string;
+  teamName: string;
+  position: Position;
+  value: number;
+}
+
+export interface LeaderCategoryDto {
+  // Stable stat key, e.g. 'passYards'.
+  key: string;
+  // Display heading, e.g. 'Passing Yards'.
+  label: string;
+  // Short unit suffix for the value column, e.g. 'yds' | 'pts' | '' (a plain count).
+  unit: string;
+  // Players with a nonzero value, descending; capped at the top N. Empty until games are played.
+  rows: LeaderRowDto[];
+}
+
+export interface LeadersResponseDto {
+  // Aggregated over completed season games only (the same games standings count).
+  categories: LeaderCategoryDto[];
+}
