@@ -6,6 +6,7 @@ import {
   TEAM_NICKNAMES,
   CITY_NAMES,
   CONFERENCE_NAMES,
+  CLASSIC_GAME_NAMES,
 } from '../src/data';
 
 test('deterministic: same seed yields an identical league', () => {
@@ -67,6 +68,25 @@ test('overall ratings are in a sane range and drive a legal starter per position
   }
 });
 
+for (const size of LEAGUE_SIZES) {
+  test(`size ${size}: every team has a band and exactly one symmetric rival`, () => {
+    const league = generateLeague({ templateKey: 'heritage', size, seed: `bands-${size}` });
+    league.teams.forEach((team, i) => {
+      assert.ok(team.band.name && team.band.style && team.band.chant && team.band.tradition,
+        `team ${i} missing band fields`);
+      const j = team.rivalIndex;
+      assert.ok(j >= 0 && j < size && j !== i, `team ${i} has an invalid rival ${j}`);
+      assert.equal(league.teams[j].rivalIndex, i, `rivalry ${i}<->${j} is not symmetric`);
+      // Rivals share a division and a classic-game name.
+      assert.equal(league.teams[j].division, team.division, `rivals ${i},${j} in different divisions`);
+      assert.equal(league.teams[j].classicGameName, team.classicGameName, `rivals ${i},${j} disagree on classic game`);
+    });
+    // Every team is paired exactly once (no team is left out).
+    const partnered = new Set(league.teams.map((_, i) => i));
+    assert.equal(partnered.size, size);
+  });
+}
+
 // Brand safety (company-docs/vision.md rule, which overrides everything): none of the generated
 // identity strings may collide with the real institutions the rule names. This guards against a
 // future edit to the banks reintroducing one; the current banks are all original fiction.
@@ -78,6 +98,9 @@ test('brand safety: no generated name collides with a real-institution denylist'
     'rams', 'broncos', 'mountaineers', 'gators', 'blue tigers', 'lions',
     'swac', 'meac', 'ciaa', 'siac', 'grambling', 'howard', 'jackson', 'southern',
     'prairie view', 'alcorn', 'hampton', 'morehouse', 'spelman', 'tuskegee', 'famu',
+    // Real marching bands / their signatures — forbidden for the generated bands.
+    'sonic boom', 'marching 100', 'aristocrat', 'human jukebox', 'marching storm',
+    'blue and gold marching machine', 'marching wildcats', 'ocean of soul',
   ];
   const single = DENYLIST.filter((t) => !t.includes(' '));
   const phrases = DENYLIST.filter((t) => t.includes(' '));
@@ -91,15 +114,16 @@ test('brand safety: no generated name collides with a real-institution denylist'
     return null;
   };
 
-  for (const value of [...TEAM_NICKNAMES, ...CITY_NAMES, ...CONFERENCE_NAMES]) {
+  for (const value of [...TEAM_NICKNAMES, ...CITY_NAMES, ...CONFERENCE_NAMES, ...CLASSIC_GAME_NAMES]) {
     const hit = collides(value);
     assert.equal(hit, null, `name bank entry "${value}" collides with denylisted "${hit}"`);
   }
 
-  // And check the actual generated output across the largest preset.
+  // And check the actual generated output across the largest preset, including bands.
   const league = generateLeague({ templateKey: 'heritage', size: 54, seed: 'brand' });
   for (const team of league.teams) {
-    const hit = collides(`${team.name} ${team.conference} ${team.division}`);
+    const hay = `${team.name} ${team.conference} ${team.division} ${team.band.name} ${team.band.style} ${team.band.tradition} ${team.classicGameName}`;
+    const hit = collides(hay);
     assert.equal(hit, null, `generated "${team.name}" collides with denylisted "${hit}"`);
   }
 });

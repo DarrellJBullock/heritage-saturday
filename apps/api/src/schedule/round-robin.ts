@@ -42,3 +42,30 @@ export function roundRobin(teamIds: string[]): Matchup[] {
 
   return matchups;
 }
+
+/**
+ * Reorder a round-robin's WEEKS so rival-heavy weeks fall late in the season, favouring
+ * late-season rivalry games (the vision's scheduling rule) without breaking the round-robin —
+ * each week is already a valid set, so permuting whole weeks preserves validity. Deterministic:
+ * weeks are sorted ascending by rival-game count, ties broken by original week number, then
+ * renumbered 1..N. `rivalOf` maps a team id to its rival's id.
+ */
+export function placeRivalWeeks(matchups: Matchup[], rivalOf: Map<string, string>): Matchup[] {
+  const isRival = (m: Matchup) => rivalOf.get(m.homeId) === m.awayId;
+
+  const weeks = new Map<number, Matchup[]>();
+  for (const m of matchups) {
+    (weeks.get(m.week) ?? weeks.set(m.week, []).get(m.week)!).push(m);
+  }
+
+  const ordered = [...weeks.entries()]
+    .map(([week, games]) => ({ week, games, rivals: games.filter(isRival).length }))
+    .sort((a, b) => a.rivals - b.rivals || a.week - b.week);
+
+  const result: Matchup[] = [];
+  ordered.forEach((entry, idx) => {
+    const newWeek = idx + 1;
+    for (const g of entry.games) result.push({ ...g, week: newWeek });
+  });
+  return result;
+}

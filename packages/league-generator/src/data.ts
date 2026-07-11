@@ -65,6 +65,48 @@ export const LAST_NAMES = [
   'Vaughn', 'Waverly',
 ] as const;
 
+// --- Marching bands (100% original fiction — NOT any real HBCU band, name, or tradition) ---
+// The band name is composed from the team's nickname + one of these ensemble words.
+export const BAND_ENSEMBLE_WORDS = [
+  'Marching Brigade', 'Sound Corps', 'Cadence Legion', 'Show Band', 'Drumline Company',
+  'Marching Regiment', 'Brass Battalion', 'Rhythm Corps', 'Field Ensemble', 'Marching Order',
+] as const;
+
+export const BAND_STYLES = [
+  'high-energy show style with a heavy brass front',
+  'precision military drill',
+  'funk-forward street cadence',
+  'fast-break dance-battle style',
+  'thunderous drumline-led attack',
+  'smooth ballad-and-swing showmanship',
+] as const;
+
+export const BAND_CHANTS = [
+  'Hold the line, sound the horn!',
+  'Louder in the fourth!',
+  'One beat, one heart!',
+  'Turn it up, bring it home!',
+  'From the tunnel to the end zone!',
+  'Feel the drum, raise the roof!',
+] as const;
+
+export const BAND_TRADITIONS = [
+  'a fifth-quarter standoff after every home game',
+  'a torch-lit march to the stadium on rivalry week',
+  'a call-and-response with the student section at every kickoff',
+  'a silent drumline entrance that erupts at midfield',
+  'a homecoming serenade of the senior class',
+  'a pregame tunnel walk timed to a single bass cadence',
+] as const;
+
+// Original names for the annual rivalry game. No real classic/bowl names.
+export const CLASSIC_GAME_NAMES = [
+  'The Delta Duel', 'The Ironclad Classic', 'The Harbor Rivalry', 'The Legacy Bowl-Out',
+  'The Coastal Clash', 'The Founders Feud', 'The Heritage Standoff', 'The Frontier Fracas',
+  'The Summit Showdown', 'The Tidewater Tussle', 'The Copper Cup', 'The Magnolia Meeting',
+  'The Gaslight Grudge', 'The Anchor Rivalry', 'The Highland Reckoning', 'The Cedar Classic',
+] as const;
+
 // [primary, secondary] hex pairs — original palettes, no real team branding.
 export const COLOR_PAIRS: readonly [string, string][] = [
   ['#1B3A5B', '#F2A900'], ['#7A1F2B', '#E8D9B5'], ['#0E4D3C', '#C9A227'],

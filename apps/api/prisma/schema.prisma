@@ -276,8 +276,16 @@ model Team {
   primaryColor   String?
   secondaryColor String?
 
+  // Rivalry: a symmetric pairing within a league (generation sets both sides). classicGameName
+  // is the named annual meeting. Homecoming is derived from the schedule, not stored.
+  rivalTeamId     String?
+  rival           Team?   @relation("Rivalry", fields: [rivalTeamId], references: [id])
+  rivaledBy       Team[]  @relation("Rivalry")
+  classicGameName String?
+
   players    Player[]
   coach      Coach?
+  band       Band?
   depthChart DepthChart[]
   homeGames  Game[]       @relation("HomeTeam")
   awayGames  Game[]       @relation("AwayTeam")
@@ -286,6 +294,18 @@ model Team {
 
   @@unique([rosterId, externalTeamId])
   @@index([rosterId])
+}
+
+// A team's marching band — original fiction, generated per team. Shown on the team page and
+// (later) in the broadcast presentation timeline.
+model Band {
+  id        String @id @default(cuid())
+  teamId    String @unique
+  team      Team   @relation(fields: [teamId], references: [id])
+  name      String
+  style     String
+  chant     String
+  tradition String
 }
 
 model Player {

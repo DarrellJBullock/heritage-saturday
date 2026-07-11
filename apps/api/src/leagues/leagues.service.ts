@@ -65,6 +65,7 @@ export class LeaguesService {
         data: { ownerId, leagueId: created.id, name: `${name} (generated)`, visibility: 'PRIVATE' },
       });
 
+      const teamIds: string[] = [];
       for (let i = 0; i < generated.teams.length; i++) {
         const t = generated.teams[i];
         const team = await tx.team.create({
@@ -78,8 +79,11 @@ export class LeaguesService {
             division: t.division,
             primaryColor: t.primaryColor,
             secondaryColor: t.secondaryColor,
+            classicGameName: t.classicGameName,
+            band: { create: { name: t.band.name, style: t.band.style, chant: t.band.chant, tradition: t.band.tradition } },
           },
         });
+        teamIds.push(team.id);
         await tx.player.createMany({
           data: t.players.map((p, j) => ({
             teamId: team.id,
@@ -100,6 +104,14 @@ export class LeaguesService {
             kickPower: p.kickPower ?? null,
             kickAccuracy: p.kickAccuracy ?? null,
           })),
+        });
+      }
+
+      // All teams exist now — link each to its rival (symmetric; the generator already paired them).
+      for (let i = 0; i < generated.teams.length; i++) {
+        await tx.team.update({
+          where: { id: teamIds[i] },
+          data: { rivalTeamId: teamIds[generated.teams[i].rivalIndex] },
         });
       }
       return created;

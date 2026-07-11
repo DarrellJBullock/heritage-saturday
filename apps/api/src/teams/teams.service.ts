@@ -13,7 +13,11 @@ export class TeamsService {
   async getDetail(teamId: string): Promise<TeamDetailDto> {
     const team = await this.prisma.team.findUnique({
       where: { id: teamId },
-      include: { players: { orderBy: { jerseyNumber: 'asc' } } },
+      include: {
+        players: { orderBy: { jerseyNumber: 'asc' } },
+        band: true,
+        rival: { select: { id: true, teamName: true } },
+      },
     });
     if (!team) {
       throw new DomainException(404, 'NOT_FOUND', 'Team not found');
@@ -31,6 +35,12 @@ export class TeamsService {
       secondaryColor: team.secondaryColor,
       coachName: team.coachName,
       players: team.players.map(toPlayerDto),
+      band: team.band
+        ? { name: team.band.name, style: team.band.style, chant: team.band.chant, tradition: team.band.tradition }
+        : null,
+      rival: team.rival
+        ? { teamId: team.rival.id, teamName: team.rival.teamName, classicGameName: team.classicGameName }
+        : null,
     };
   }
 

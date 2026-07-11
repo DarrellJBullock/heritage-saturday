@@ -20,6 +20,13 @@ export interface GeneratedPlayer {
   kickAccuracy?: number;
 }
 
+export interface GeneratedBand {
+  name: string;
+  style: string;
+  chant: string;
+  tradition: string;
+}
+
 export interface GeneratedTeam {
   name: string;
   city: string;
@@ -28,6 +35,11 @@ export interface GeneratedTeam {
   division: string;
   primaryColor: string;
   secondaryColor: string;
+  band: GeneratedBand;
+  // Index (into GeneratedLeague.teams) of this team's rival, and the name of their annual game.
+  // Rivalries are symmetric: teams[i].rivalIndex === j ⇒ teams[j].rivalIndex === i.
+  rivalIndex: number;
+  classicGameName: string;
   players: GeneratedPlayer[];
 }
 

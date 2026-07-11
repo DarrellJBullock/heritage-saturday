@@ -173,11 +173,20 @@ export interface PlayerDto {
  * roster. `primaryColor`/`secondaryColor` are surfaced here (they were stored but never
  * serialized before the team page existed).
  */
+export interface BandDto {
+  name: string;
+  style: string;
+  chant: string;
+  tradition: string;
+}
+
 export interface TeamDetailDto extends TeamSummaryDto {
   primaryColor: string | null;
   secondaryColor: string | null;
   coachName: string | null;
   players: PlayerDto[];
+  band: BandDto | null;
+  rival: { teamId: string; teamName: string; classicGameName: string | null } | null;
 }
 
 /** Full player page: identity plus every rating attribute and the owning team. Attributes are
@@ -349,6 +358,11 @@ export interface ScheduleGameDto {
   // Null until the game's week has been simulated.
   homeScore: number | null;
   awayScore: number | null;
+  // Rivalry annotations (see rivalry-aware scheduling). isHomecoming marks the home team's
+  // rivalry game; classicGameName is the named annual meeting, if any.
+  isRivalry: boolean;
+  isHomecoming: boolean;
+  classicGameName: string | null;
 }
 
 export interface ScheduleResponseDto {
