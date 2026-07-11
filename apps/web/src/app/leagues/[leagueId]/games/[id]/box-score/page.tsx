@@ -3,6 +3,7 @@ import { ApiError } from '@/lib/api-client';
 import { serverApiClient } from '@/lib/api-client.server';
 import type { BoxScoreResponseDto, PlayerGameStatsDto } from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Table,
@@ -13,6 +14,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
+import { WinProbChart } from './win-prob-chart';
+
+// Accent color per drive outcome for the drive feed.
+function outcomeVariant(outcome: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (outcome === 'TD' || outcome === 'FG') return 'default';
+  if (outcome === 'TURNOVER') return 'destructive';
+  return 'secondary';
+}
 
 interface PageProps {
   params: Promise<{ leagueId: string; id: string }>;
@@ -86,13 +95,81 @@ export default async function BoxScorePage({ params }: PageProps) {
             {box.teams.away.teamName}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
+        <CardContent className="flex flex-col gap-3">
+          <p className="text-sm">{box.recap}</p>
+          <p className="text-xs text-muted-foreground">
             {winner === 'Tie' ? 'Final: Tie game' : `Winner: ${winner}`} · seed{' '}
             <code>{box.seed}</code>
           </p>
         </CardContent>
       </Card>
+
+      {/* Win probability + top performers side by side on wide screens. */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Win Probability</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <WinProbChart
+              points={box.winProbability}
+              homeName={box.teams.home.teamName}
+              awayName={box.teams.away.teamName}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Top Performers</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4 text-sm">
+            {(['home', 'away'] as const).map((side) => (
+              <div key={side} className="flex flex-col gap-2">
+                <p className="font-medium">{box.teams[side].teamName}</p>
+                {box.leaders[side].length === 0 ? (
+                  <p className="text-muted-foreground text-xs">—</p>
+                ) : (
+                  box.leaders[side].map((p) => (
+                    <div key={`${p.role}-${p.playerId}`} className="flex flex-col">
+                      <Link
+                        href={`/leagues/${leagueId}/players/${p.playerId}`}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        {p.name}
+                      </Link>
+                      <span className="text-muted-foreground text-xs">{p.line}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold mb-2">Drive by Drive</h2>
+        <div className="flex flex-col gap-1">
+          {box.drives.map((d, i) => (
+            <div key={i} className="flex items-center justify-between gap-2 border-b py-1 text-sm">
+              <span className="flex items-center gap-2">
+                <span className="text-muted-foreground w-8 text-xs">
+                  {d.quarter <= 4 ? `Q${d.quarter}` : 'OT'}
+                </span>
+                {d.teamName}
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="text-muted-foreground">{d.yards} yds</span>
+                <Badge variant={outcomeVariant(d.outcome)}>
+                  {d.outcome}
+                  {d.points > 0 ? ` +${d.points}` : ''}
+                </Badge>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div>
         <h2 className="text-lg font-semibold mb-2">Quarter-by-Quarter</h2>

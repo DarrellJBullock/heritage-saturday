@@ -11,7 +11,11 @@ import {
   DEFENSIVE_ARCHETYPES,
   OFFENSIVE_ARCHETYPES,
   BoxScoreResponseDto,
+  DriveSummaryDto,
+  PerformerDto,
+  PlayerGameStatsDto,
   SimulateGameResponseDto,
+  WinProbabilityPointDto,
 } from '@heritage-saturday/shared';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { DepthChartsService } from '../depth-charts/depth-charts.service';
@@ -253,6 +257,8 @@ export class GamesService {
         // then serialize to different JSON, which looks exactly like re-simulation drift.
         // playerId is unique per game (@@unique([gameId, playerId])), so this is total.
         playerStats: { include: { player: true }, orderBy: { playerId: 'asc' } },
+        // Drive-level events, ordered, for the drive feed and win-probability timeline.
+        events: { orderBy: { sequence: 'asc' } },
       },
     });
 
@@ -335,19 +341,169 @@ export class GamesService {
         xpMade: p.xpMade ?? undefined,
       }));
 
+    const homeName = game.homeTeam.teamName;
+    const awayName = game.awayTeam.teamName;
+    const finalScore = { home: game.homeScore ?? 0, away: game.awayScore ?? 0 };
+
+    const drives = this.buildDrives(game.events, game.homeTeamId, homeName, awayName);
+    const leaders = {
+      home: this.buildLeaders(homePlayerStats),
+      away: this.buildLeaders(awayPlayerStats),
+    };
+    const winProbability = this.buildWinProbability(game.events, game.homeTeamId, finalScore);
+    const recap = this.buildRecap(homeName, awayName, finalScore, [...homePlayerStats, ...awayPlayerStats]);
+
     return {
       gameId: game.id,
       seed: game.seed,
       status: game.status,
       teams: {
-        home: { id: game.homeTeam.id, teamName: game.homeTeam.teamName },
-        away: { id: game.awayTeam.id, teamName: game.awayTeam.teamName },
+        home: { id: game.homeTeam.id, teamName: homeName },
+        away: { id: game.awayTeam.id, teamName: awayName },
       },
-      finalScore: { home: game.homeScore ?? 0, away: game.awayScore ?? 0 },
+      finalScore,
       quarterByQuarter,
       teamStats: { home: toStatsDto(homeStats), away: toStatsDto(awayStats) },
       playerStats: { home: homePlayerStats, away: awayPlayerStats },
+      drives,
+      leaders,
+      winProbability,
+      recap,
     };
+  }
+
+  // ---- Game Center derivations (from the stored game; no re-simulation) --------------------
+
+  /** One entry per possession, from the DRIVE_END events (points from the following SCORE). */
+  private buildDrives(
+    events: { type: string; teamId: string | null; quarter: number; payload: unknown }[],
+    homeTeamId: string,
+    homeName: string,
+    awayName: string,
+  ): DriveSummaryDto[] {
+    const drives: DriveSummaryDto[] = [];
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
+      if (e.type !== 'DRIVE_END') continue;
+      const payload = (e.payload ?? {}) as { outcome?: string; yards?: number };
+      const side: 'home' | 'away' = e.teamId === homeTeamId ? 'home' : 'away';
+      const next = events[i + 1];
+      const points =
+        next && next.type === 'SCORE' && next.teamId === e.teamId
+          ? ((next.payload ?? {}) as { points?: number }).points ?? 0
+          : 0;
+      drives.push({
+        quarter: e.quarter,
+        side,
+        teamName: side === 'home' ? homeName : awayName,
+        yards: payload.yards ?? 0,
+        outcome: payload.outcome ?? 'DRIVE',
+        points,
+      });
+    }
+    return drives;
+  }
+
+  /** Leading passer/rusher/receiver and a defensive standout for a team. */
+  private buildLeaders(players: PlayerGameStatsDto[]): PerformerDto[] {
+    const leaders: PerformerDto[] = [];
+    const best = (key: (p: PlayerGameStatsDto) => number) =>
+      players.reduce<PlayerGameStatsDto | null>(
+        (top, p) => (key(p) > (top ? key(top) : 0) ? p : top),
+        null,
+      );
+
+    const passer = best((p) => p.passYards ?? 0);
+    if (passer && (passer.passYards ?? 0) > 0) {
+      leaders.push(this.performer(passer, 'PASSING',
+        `${passer.passCompletions ?? 0}/${passer.passAttempts ?? 0}, ${passer.passYards} yds` +
+        (passer.passTDs ? `, ${passer.passTDs} TD` : '') +
+        (passer.interceptions ? `, ${passer.interceptions} INT` : '')));
+    }
+    const rusher = best((p) => p.rushYards ?? 0);
+    if (rusher && (rusher.rushYards ?? 0) > 0) {
+      leaders.push(this.performer(rusher, 'RUSHING',
+        `${rusher.carries ?? 0} car, ${rusher.rushYards} yds` +
+        (rusher.rushTDs ? `, ${rusher.rushTDs} TD` : '')));
+    }
+    const receiver = best((p) => p.receivingYards ?? 0);
+    if (receiver && (receiver.receivingYards ?? 0) > 0) {
+      leaders.push(this.performer(receiver, 'RECEIVING',
+        `${receiver.receptions ?? 0} rec, ${receiver.receivingYards} yds` +
+        (receiver.receivingTDs ? `, ${receiver.receivingTDs} TD` : '')));
+    }
+    const defender = best((p) => (p.tackles ?? 0) + (p.sacks ?? 0));
+    if (defender && (defender.tackles ?? 0) + (defender.sacks ?? 0) > 0) {
+      leaders.push(this.performer(defender, 'DEFENSE',
+        `${defender.tackles ?? 0} tkl` +
+        (defender.sacks ? `, ${defender.sacks} sack` : '') +
+        (defender.defInterceptions ? `, ${defender.defInterceptions} INT` : '')));
+    }
+    return leaders;
+  }
+
+  private performer(p: PlayerGameStatsDto, role: PerformerDto['role'], line: string): PerformerDto {
+    return { playerId: p.playerId, name: `${p.firstName} ${p.lastName}`, position: p.position, role, line };
+  }
+
+  /**
+   * A lightweight, deterministic win-probability timeline for the home team: 0.5 at kickoff, a
+   * point after each score (logistic on running margin, sharpened as the game runs out), and a
+   * terminal point pinned to the actual winner so the chart never contradicts the result.
+   */
+  private buildWinProbability(
+    events: { type: string; teamId: string | null; quarter: number; payload: unknown }[],
+    homeTeamId: string,
+    finalScore: { home: number; away: number },
+  ): WinProbabilityPointDto[] {
+    const points: WinProbabilityPointDto[] = [{ quarter: 1, homeWinProb: 0.5 }];
+    let home = 0;
+    let away = 0;
+    let lastQuarter = 1;
+    for (const e of events) {
+      if (e.type !== 'SCORE') continue;
+      const pts = ((e.payload ?? {}) as { points?: number }).points ?? 0;
+      if (e.teamId === homeTeamId) home += pts;
+      else away += pts;
+      lastQuarter = e.quarter;
+      const margin = home - away;
+      const quartersLeft = Math.max(0, 4 - e.quarter);
+      const scale = 2 + quartersLeft * 3; // softer early, sharper late
+      points.push({ quarter: e.quarter, homeWinProb: round2(1 / (1 + Math.exp(-margin / scale))) });
+    }
+    const terminal = finalScore.home === finalScore.away ? 0.5 : finalScore.home > finalScore.away ? 1 : 0;
+    points.push({ quarter: lastQuarter, homeWinProb: terminal });
+    return points;
+  }
+
+  private buildRecap(
+    homeName: string,
+    awayName: string,
+    finalScore: { home: number; away: number },
+    allPlayers: PlayerGameStatsDto[],
+  ): string {
+    const { home, away } = finalScore;
+    let lead: string;
+    if (home === away) {
+      lead = `The ${homeName} and ${awayName} played to a ${home}–${away} draw.`;
+    } else {
+      const [winner, loser, ws, ls] =
+        home > away ? [homeName, awayName, home, away] : [awayName, homeName, away, home];
+      lead = `The ${winner} beat the ${loser} ${ws}–${ls}.`;
+    }
+
+    const topBy = (key: (p: PlayerGameStatsDto) => number) =>
+      allPlayers.reduce<PlayerGameStatsDto | null>(
+        (t, p) => (key(p) > (t ? key(t) : 0) ? p : t),
+        null,
+      );
+    const name = (p: PlayerGameStatsDto) => `${p.firstName} ${p.lastName}`;
+    const passer = topBy((p) => p.passYards ?? 0);
+    const rusher = topBy((p) => p.rushYards ?? 0);
+    const notes: string[] = [];
+    if (passer && (passer.passYards ?? 0) > 0) notes.push(`${name(passer)} threw for ${passer.passYards} yards`);
+    if (rusher && (rusher.rushYards ?? 0) > 0) notes.push(`${name(rusher)} ran for ${rusher.rushYards}`);
+    return notes.length ? `${lead} ${notes.join(', and ')}.` : lead;
   }
 
   private validateArchetypes(dto: SimulateGameDto): void {
@@ -419,4 +575,8 @@ export class GamesService {
       })),
     };
   }
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
