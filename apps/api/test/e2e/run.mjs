@@ -635,6 +635,62 @@ async function main() {
   ok('a non-member gets 404 exporting user A\'s league', exportAsB.status === 404, exportAsB.status);
 
   // -------------------------------------------------------------------
+  section('Secondary & emerging rivalries — scored from head-to-head games');
+  // -------------------------------------------------------------------
+  const pairKeyOf = (r) => [r.teamA.teamId, r.teamB.teamId].sort().join('|');
+  const findRivalry = (rv, a, b) => {
+    const key = [a, b].sort().join('|');
+    return [...rv.active, ...rv.emerging].find((r) => pairKeyOf(r) === key) ?? null;
+  };
+  // team[3] and team[4] are not primary rivals of each other (the generator pairs 2k,2k+1).
+  const rivA = genTeams[3].id;
+  const rivB = genTeams[4].id;
+  const playRival = (seed) => api('POST', `/leagues/${GEN}/games/simulate`, {
+    user: USER_A,
+    body: {
+      homeTeamId: rivA, awayTeamId: rivB,
+      homeOffArchetype: 'BALANCED', homeDefArchetype: 'BALANCED_4_3',
+      awayOffArchetype: 'BALANCED', awayDefArchetype: 'BALANCED_4_3',
+      seed,
+    },
+  });
+
+  // Play repeated meetings until the pair registers as a rivalry (each game adds >=1 to the score,
+  // EMERGING_MIN is 4, so this converges in a few games).
+  let rivalry = null;
+  for (let i = 0; i < 10 && !rivalry; i++) {
+    await playRival(`rivalry-${i}`);
+    const rv = await api('GET', `/leagues/${GEN}/rivalries`, { user: USER_A });
+    rivalry = findRivalry(rv.body, rivA, rivB);
+  }
+  ok('repeated head-to-head games form a rivalry with an accumulating score',
+    !!rivalry && rivalry.score >= 4, rivalry);
+
+  // The primary-rival pair (team0/team1) is tracked on the team, never as a secondary/emerging one.
+  const rvNow = await api('GET', `/leagues/${GEN}/rivalries`, { user: USER_A });
+  ok('the primary-rival pair never appears in secondary/emerging rivalries',
+    !findRivalry(rvNow.body, genTeams[0].id, genTeams[1].id), 'primary pair excluded');
+
+  // Approve promotes it to an active secondary rival (and sticks).
+  const approved = await api('POST', `/leagues/${GEN}/rivalries/${rivalry.id}/approve`, { user: USER_A });
+  ok('commissioner approve makes the pair an active secondary rival',
+    approved.status === 200 && approved.body.active.some((r) => r.id === rivalry.id), approved.body);
+
+  // Dismiss hides it, and it stays hidden across a later recompute.
+  const dismissed = await api('POST', `/leagues/${GEN}/rivalries/${rivalry.id}/dismiss`, { user: USER_A });
+  ok('commissioner dismiss removes it from active and emerging',
+    dismissed.status === 200 && !findRivalry(dismissed.body, rivA, rivB), dismissed.body);
+  await playRival('rivalry-after-dismiss');
+  const afterDismiss = await api('GET', `/leagues/${GEN}/rivalries`, { user: USER_A });
+  ok('a dismissed rivalry does not resurface on recompute', !findRivalry(afterDismiss.body, rivA, rivB), 'stays dismissed');
+
+  // Access: a non-member cannot read or manage rivalries.
+  const rivalsAsB = await api('GET', `/leagues/${GEN}/rivalries`, { user: USER_B });
+  ok('a non-member gets 404 reading rivalries', rivalsAsB.status === 404, rivalsAsB.status);
+  const approveAsB = await api('POST', `/leagues/${GEN}/rivalries/${rivalry.id}/approve`, { user: USER_B });
+  ok('a non-member gets 404 approving a rivalry', approveAsB.status === 404, approveAsB.status);
+
+  // -------------------------------------------------------------------
   section('Multi-user leagues — membership + LEAGUE visibility grants member read access');
   // -------------------------------------------------------------------
   const B_EMAIL = 'qa-b@heritage-saturday.local'; // qa-user-b's seeded email

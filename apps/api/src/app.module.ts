@@ -13,6 +13,7 @@ import { PlayersModule } from './players/players.module';
 import { DepthChartsModule } from './depth-charts/depth-charts.module';
 import { GamesModule } from './games/games.module';
 import { ScheduleModule } from './schedule/schedule.module';
+import { RivalriesModule } from './rivalries/rivalries.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ScheduleModule } from './schedule/schedule.module';
     DepthChartsModule,
     GamesModule,
     ScheduleModule,
+    RivalriesModule,
   ],
 })
 export class AppModule implements NestModule {
