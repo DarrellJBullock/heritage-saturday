@@ -24,12 +24,36 @@ export class TeamsService {
         players: { orderBy: { jerseyNumber: 'asc' } },
         band: true,
         rival: { select: { id: true, teamName: true } },
-        roster: { select: { ownerId: true } },
+        roster: { select: { ownerId: true, leagueId: true } },
       },
     });
     if (!team) {
       throw new DomainException(404, 'NOT_FOUND', 'Team not found');
     }
+
+    // Non-blocking color advisories (spec: warn on low contrast or a palette duplicated in the
+    // league). HEX validity is already enforced on write, so these are purely advisory.
+    const colorWarnings: string[] = [];
+    if (team.primaryColor && team.secondaryColor) {
+      const ratio = contrastRatio(team.primaryColor, team.secondaryColor);
+      if (ratio !== null && ratio < 1.5) {
+        colorWarnings.push('Primary and secondary colors are very similar — they may be hard to tell apart.');
+      }
+    }
+    if (team.primaryColor) {
+      const clash = await this.prisma.team.findFirst({
+        where: {
+          id: { not: teamId },
+          roster: { leagueId: team.roster.leagueId },
+          primaryColor: { equals: team.primaryColor, mode: 'insensitive' },
+        },
+        select: { teamName: true },
+      });
+      if (clash) {
+        colorWarnings.push(`Shares its primary color with ${clash.teamName}.`);
+      }
+    }
+
     return {
       id: team.id,
       externalTeamId: team.externalTeamId,
@@ -54,6 +78,7 @@ export class TeamsService {
         ? { teamId: team.rival.id, teamName: team.rival.teamName, classicGameName: team.classicGameName }
         : null,
       canEditColors: team.roster.ownerId === userId,
+      colorWarnings,
     };
   }
 
@@ -160,6 +185,31 @@ function toRosterPlayerDto(p: Player): RosterPlayerDto {
     kickPower: p.kickPower,
     kickAccuracy: p.kickAccuracy,
   };
+}
+
+/** Parse #rgb / #rrggbb to [r,g,b] 0-255, or null if unparseable. */
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = hex.trim().replace(/^#/, '');
+  const full = m.length === 3 ? m.replace(/(.)/g, '$1$1') : m;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
+}
+
+/** WCAG contrast ratio (1..21) between two HEX colors, or null if either can't be parsed. */
+function contrastRatio(a: string, b: string): number | null {
+  const rgbA = hexToRgb(a);
+  const rgbB = hexToRgb(b);
+  if (!rgbA || !rgbB) return null;
+  const lum = ([r, g, b]: [number, number, number]) => {
+    const chan = [r, g, b].map((c) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * chan[0] + 0.7152 * chan[1] + 0.0722 * chan[2];
+  };
+  const l1 = lum(rgbA);
+  const l2 = lum(rgbB);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 }
 
 /** Validate a #rgb / #rrggbb HEX color, or null/blank to clear. Throws a 400 on a bad value. */

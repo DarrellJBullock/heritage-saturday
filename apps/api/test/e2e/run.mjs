@@ -462,6 +462,24 @@ async function main() {
   const colorsAsB = await api('PATCH', `/teams/${teamForColors}/colors`, { user: USER_B, body: { primaryColor: '#000000' } });
   ok('a non-owner gets 404 setting team colors', colorsAsB.status === 404, colorsAsB.body);
 
+  // Color advisories: low primary/secondary contrast, and a primary duplicated within the league.
+  const sixColors = (primary, secondary) => ({ primaryColor: primary, secondaryColor: secondary, accentColor: null, helmetColor: null, homeJerseyColor: null, awayJerseyColor: null });
+  await api('PATCH', `/teams/${teamForColors}/colors`, { user: USER_A, body: sixColors('#111111', '#141414') });
+  const lowContrast = await api('GET', `/teams/${teamForColors}`, { user: USER_A });
+  ok('near-identical primary/secondary raise a low-contrast warning',
+    lowContrast.body.colorWarnings.some((w) => /similar/i.test(w)), lowContrast.body.colorWarnings);
+  await api('PATCH', `/teams/${teamForColors}/colors`, { user: USER_A, body: sixColors('#ffffff', '#000000') });
+  const highContrast = await api('GET', `/teams/${teamForColors}`, { user: USER_A });
+  ok('a distinct palette raises no contrast warning',
+    !highContrast.body.colorWarnings.some((w) => /similar/i.test(w)), highContrast.body.colorWarnings);
+
+  const otherTeam = genTeams[1].id;
+  await api('PATCH', `/teams/${teamForColors}/colors`, { user: USER_A, body: sixColors('#3355aa', '#eeeeee') });
+  await api('PATCH', `/teams/${otherTeam}/colors`, { user: USER_A, body: sixColors('#3355aa', '#222222') });
+  const dupColors = await api('GET', `/teams/${otherTeam}`, { user: USER_A });
+  ok('a primary color shared with another league team raises a duplicate warning',
+    dupColors.body.colorWarnings.some((w) => /shares its primary/i.test(w)), dupColors.body.colorWarnings);
+
   const aPlayerId = teamDetail.body.players?.[0]?.id;
   const playerDetail = await api('GET', `/players/${aPlayerId}`, { user: USER_A });
   ok('GET /players/:id returns player detail with team and overall rating',

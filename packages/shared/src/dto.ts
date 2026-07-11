@@ -234,6 +234,9 @@ export interface TeamDetailDto extends TeamSummaryDto, TeamColorsDto {
   rival: { teamId: string; teamName: string; classicGameName: string | null } | null;
   // True when the viewer owns this team's roster — the web page shows the color editor.
   canEditColors: boolean;
+  // Non-blocking color advisories: low primary/secondary contrast, or a palette shared with
+  // another team in the league. Empty when the colors are fine.
+  colorWarnings: string[];
 }
 
 /** Full player page: identity plus every rating attribute and the owning team. */
