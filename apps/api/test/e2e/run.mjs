@@ -80,6 +80,23 @@ async function api(method, urlPath, { user, body, file, fileName } = {}) {
   return { status: res.status, body: json };
 }
 
+// A raw fetch for binary/file endpoints (the JSON-parsing `api()` helper can't read these).
+async function apiRaw(method, urlPath, user) {
+  const res = await fetch(`${BASE}${urlPath}`, {
+    method,
+    headers: user ? { 'x-user-id': user } : {},
+  });
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return {
+    status: res.status,
+    contentType: res.headers.get('content-type'),
+    disposition: res.headers.get('content-disposition'),
+    length: bytes.length,
+    // .xlsx is a ZIP container — every valid file starts with "PK".
+    isZip: bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b,
+  };
+}
+
 function readFixture(name) {
   return fs.readFileSync(path.join(FIXTURES, name));
 }
@@ -534,6 +551,25 @@ async function main() {
   ok('user B gets 404 reading user A\'s leaders', leadersAsB.status === 404, leadersAsB.body);
   const simAsB = await api('POST', `/leagues/${GEN}/schedule/simulate-week`, { user: USER_B });
   ok('user B gets 404 trying to simulate user A\'s season', simAsB.status === 404, simAsB.body);
+
+  // -------------------------------------------------------------------
+  section('Excel — blank import template + roster export (round-trip column layout)');
+  // -------------------------------------------------------------------
+  const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const template = await apiRaw('GET', `/leagues/${GEN}/imports/template`, USER_A);
+  ok('GET /imports/template returns a non-empty .xlsx attachment',
+    template.status === 200 && template.contentType === XLSX_MIME && template.isZip &&
+      template.length > 0 && /attachment/.test(template.disposition ?? ''),
+    { status: template.status, type: template.contentType, bytes: template.length });
+
+  const exported = await apiRaw('GET', `/leagues/${GEN}/export`, USER_A);
+  ok('GET /leagues/:id/export returns a non-empty .xlsx with a filename',
+    exported.status === 200 && exported.contentType === XLSX_MIME && exported.isZip &&
+      exported.length > template.length && /filename=".+\.xlsx"/.test(exported.disposition ?? ''),
+    { status: exported.status, bytes: exported.length, disposition: exported.disposition });
+
+  const exportAsB = await apiRaw('GET', `/leagues/${GEN}/export`, USER_B);
+  ok('a non-member gets 404 exporting user A\'s league', exportAsB.status === 404, exportAsB.status);
 
   // -------------------------------------------------------------------
   section('Multi-user leagues — membership + LEAGUE visibility grants member read access');

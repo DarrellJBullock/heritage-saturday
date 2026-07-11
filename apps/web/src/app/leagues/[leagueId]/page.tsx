@@ -112,6 +112,16 @@ export default async function LeagueHomePage({
               </Button>
             </>
           )}
+          {/* Export is read-level: a full navigation (plain <a>) so the browser downloads the file. */}
+          {teams.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              render={<a href={`/api/proxy/leagues/${leagueId}/export`} />}
+            >
+              Export to Excel
+            </Button>
+          )}
         </div>
       </div>
 

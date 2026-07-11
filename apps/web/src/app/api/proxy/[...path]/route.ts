@@ -91,6 +91,10 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const responseHeaders = new Headers();
   const contentType = upstream.headers.get('content-type');
   if (contentType) responseHeaders.set('content-type', contentType);
+  // Preserve file-download semantics (filename + "save as") for endpoints that stream a file,
+  // e.g. the Excel template and roster export.
+  const contentDisposition = upstream.headers.get('content-disposition');
+  if (contentDisposition) responseHeaders.set('content-disposition', contentDisposition);
 
   return new Response(body.byteLength ? body : null, {
     status: upstream.status,

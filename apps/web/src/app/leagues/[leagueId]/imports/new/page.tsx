@@ -61,7 +61,7 @@ export default function NewImportPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold">Import Roster</h1>
+        <h1 className="text-xl font-bold tracking-tight">Import Roster</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Upload a CSV, JSON, XLSX, or XLS file containing Players and Teams sheets.
         </p>
@@ -78,6 +78,13 @@ export default function NewImportPage() {
               className="underline underline-offset-2"
             >
               blank CSV template
+            </a>{' '}
+            or the{' '}
+            <a
+              href={`/api/proxy/leagues/${leagueId}/imports/template`}
+              className="underline underline-offset-2"
+            >
+              Excel template
             </a>
             .
           </CardDescription>
