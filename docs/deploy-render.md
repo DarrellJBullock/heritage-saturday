@@ -42,14 +42,27 @@ Sign-in uses Google. In the [Google Cloud console](https://console.cloud.google.
 
 ### 3. Finish the Google wiring
 
-Once `heritage-web` has a URL (e.g. `https://heritage-web.onrender.com`):
+Once `heritage-web` has a URL, note its exact origin — Render may add a random suffix, so it's
+something like `https://heritage-web-xxxx.onrender.com`, not necessarily `heritage-web.onrender.com`.
+Use that exact origin everywhere below.
 
-1. Back in the Google console, add the **authorized redirect URI**, exactly:
-   `https://<your-heritage-web-url>/api/auth/callback/google`
-2. In Render, open **heritage-web → Environment** and set the two values marked "sync: false":
+1. In the Google console, add the **authorized redirect URI**, exactly (no trailing slash,
+   `https`, path exactly `/api/auth/callback/google`):
+   `https://<your-heritage-web-origin>/api/auth/callback/google`
+2. In Render, open **heritage-web → Environment** and set:
    - `AUTH_GOOGLE_ID` = your Client ID
    - `AUTH_GOOGLE_SECRET` = your Client secret
+   - `AUTH_URL` = `https://<your-heritage-web-origin>` (just the origin — no path, no trailing slash)
 3. Save — Render redeploys `heritage-web`. You can now sign in with Google.
+
+> **Why `AUTH_URL` is required here (the `redirect_uri_mismatch` trap).** Render terminates HTTPS
+> at its edge and forwards **HTTP** to your container. With only `AUTH_TRUST_HOST=true`, Auth.js
+> can build the OAuth callback as `http://…`, which won't match the `https://…` URI you registered
+> with Google — sign-in then fails with `Error 400: redirect_uri_mismatch`. Setting `AUTH_URL` to
+> the canonical `https` origin pins the callback and fixes it. If Google still rejects the attempt,
+> click **"see error details"** on its error page: it shows the exact `redirect_uri` it received,
+> which must appear character-for-character in the Authorized redirect URIs list. Google edits can
+> take a couple of minutes to propagate.
 
 ## Notes and caveats
 
