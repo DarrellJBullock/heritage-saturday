@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { DomainException } from '../common/errors/domain-exception';
-import { PlayerDto, RosterPlayerDto, TeamDetailDto, TeamSummaryDto } from '@heritage-saturday/shared';
+import {
+  PlayerDto,
+  RosterPlayerDto,
+  SetTeamColorsRequestDto,
+  TeamDetailDto,
+  TeamSummaryDto,
+} from '@heritage-saturday/shared';
 import { Player } from '@prisma/client';
 import { isLeagueMember } from '../common/guards/base-read-access.guard';
 
@@ -9,15 +15,16 @@ import { isLeagueMember } from '../common/guards/base-read-access.guard';
 export class TeamsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Full team detail for the team page. Ownership is enforced by TeamOwnershipGuard on the
-   * route; this is only reached for the caller's own team. */
-  async getDetail(teamId: string): Promise<TeamDetailDto> {
+  /** Full team detail for the team page. Read access (owner or league member) is enforced by
+   * TeamReadAccessGuard on the route; `canEditColors` is true only for the owner. */
+  async getDetail(teamId: string, userId: string): Promise<TeamDetailDto> {
     const team = await this.prisma.team.findUnique({
       where: { id: teamId },
       include: {
         players: { orderBy: { jerseyNumber: 'asc' } },
         band: true,
         rival: { select: { id: true, teamName: true } },
+        roster: { select: { ownerId: true } },
       },
     });
     if (!team) {
@@ -34,6 +41,10 @@ export class TeamsService {
       division: team.division,
       primaryColor: team.primaryColor,
       secondaryColor: team.secondaryColor,
+      accentColor: team.accentColor,
+      helmetColor: team.helmetColor,
+      homeJerseyColor: team.homeJerseyColor,
+      awayJerseyColor: team.awayJerseyColor,
       coachName: team.coachName,
       players: team.players.map(toRosterPlayerDto),
       band: team.band
@@ -42,7 +53,25 @@ export class TeamsService {
       rival: team.rival
         ? { teamId: team.rival.id, teamName: team.rival.teamName, classicGameName: team.classicGameName }
         : null,
+      canEditColors: team.roster.ownerId === userId,
     };
+  }
+
+  /** Set a team's colors. Owner-only (TeamOwnershipGuard on the route). Each value must be a
+   * #rgb / #rrggbb HEX string, or null/blank to clear. */
+  async setColors(teamId: string, dto: SetTeamColorsRequestDto, userId: string): Promise<TeamDetailDto> {
+    await this.prisma.team.update({
+      where: { id: teamId },
+      data: {
+        primaryColor: normalizeHex(dto?.primaryColor, 'primary'),
+        secondaryColor: normalizeHex(dto?.secondaryColor, 'secondary'),
+        accentColor: normalizeHex(dto?.accentColor, 'accent'),
+        helmetColor: normalizeHex(dto?.helmetColor, 'helmet'),
+        homeJerseyColor: normalizeHex(dto?.homeJerseyColor, 'home jersey'),
+        awayJerseyColor: normalizeHex(dto?.awayJerseyColor, 'away jersey'),
+      },
+    });
+    return this.getDetail(teamId, userId);
   }
 
   async listForRoster(rosterId: string, userId: string): Promise<TeamSummaryDto[]> {
@@ -131,4 +160,14 @@ function toRosterPlayerDto(p: Player): RosterPlayerDto {
     kickPower: p.kickPower,
     kickAccuracy: p.kickAccuracy,
   };
+}
+
+/** Validate a #rgb / #rrggbb HEX color, or null/blank to clear. Throws a 400 on a bad value. */
+function normalizeHex(raw: string | null | undefined, label: string): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmed)) {
+    throw new DomainException(400, 'BAD_REQUEST', `${label} color must be a HEX value like #1a2b3c`);
+  }
+  return trimmed.toLowerCase();
 }

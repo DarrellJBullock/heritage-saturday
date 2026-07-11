@@ -223,6 +223,10 @@ export class ImportsService {
             coachName: raw.coach_name ? toStr(raw.coach_name) : null,
             primaryColor: raw.primary_color ? toStr(raw.primary_color) : null,
             secondaryColor: raw.secondary_color ? toStr(raw.secondary_color) : null,
+            accentColor: raw.accent_color ? toStr(raw.accent_color) : null,
+            helmetColor: raw.helmet_color ? toStr(raw.helmet_color) : null,
+            homeJerseyColor: raw.home_jersey_color ? toStr(raw.home_jersey_color) : null,
+            awayJerseyColor: raw.away_jersey_color ? toStr(raw.away_jersey_color) : null,
           },
         });
         teamIdByExternal.set(toStr(raw.team_id), team.id);

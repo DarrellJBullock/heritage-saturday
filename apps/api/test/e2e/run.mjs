@@ -417,6 +417,25 @@ async function main() {
       rivalDetail.body.rival?.classicGameName === teamDetail.body.rival.classicGameName,
     rivalDetail.body.rival);
 
+  // Team colors: the owner can set the fuller palette; each value is HEX-validated.
+  const teamForColors = teamDetail.body.id;
+  ok('team detail exposes the color fields and the owner can edit them',
+    'accentColor' in teamDetail.body && 'homeJerseyColor' in teamDetail.body &&
+      teamDetail.body.canEditColors === true,
+    { accent: teamDetail.body.accentColor, canEdit: teamDetail.body.canEditColors });
+  const setColors = await api('PATCH', `/teams/${teamForColors}/colors`, {
+    user: USER_A,
+    body: { primaryColor: '#123456', secondaryColor: '#abcdef', accentColor: '#0f0', helmetColor: null, homeJerseyColor: '#ffffff', awayJerseyColor: '#001122' },
+  });
+  ok('PATCH /teams/:id/colors sets a HEX palette (200) and returns it',
+    setColors.status === 200 && setColors.body.primaryColor === '#123456' &&
+      setColors.body.accentColor === '#0f0' && setColors.body.homeJerseyColor === '#ffffff',
+    setColors.body);
+  const badHex = await api('PATCH', `/teams/${teamForColors}/colors`, { user: USER_A, body: { accentColor: 'red' } });
+  ok('a non-HEX color is rejected (400)', badHex.status === 400, badHex.body);
+  const colorsAsB = await api('PATCH', `/teams/${teamForColors}/colors`, { user: USER_B, body: { primaryColor: '#000000' } });
+  ok('a non-owner gets 404 setting team colors', colorsAsB.status === 404, colorsAsB.body);
+
   const aPlayerId = teamDetail.body.players?.[0]?.id;
   const playerDetail = await api('GET', `/players/${aPlayerId}`, { user: USER_A });
   ok('GET /players/:id returns player detail with team and overall rating',

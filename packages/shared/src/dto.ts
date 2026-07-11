@@ -213,13 +213,27 @@ export interface BandDto {
   tradition: string;
 }
 
-export interface TeamDetailDto extends TeamSummaryDto {
+/** A team's colors (HEX strings, or null). primary/secondary are the base; the rest flesh out
+ * branding and are shown as swatches / editable by the owner. */
+export interface TeamColorsDto {
   primaryColor: string | null;
   secondaryColor: string | null;
+  accentColor: string | null;
+  helmetColor: string | null;
+  homeJerseyColor: string | null;
+  awayJerseyColor: string | null;
+}
+
+/** Set a team's colors (owner-only). Each field is a #rgb / #rrggbb HEX string, or null to clear. */
+export type SetTeamColorsRequestDto = TeamColorsDto;
+
+export interface TeamDetailDto extends TeamSummaryDto, TeamColorsDto {
   coachName: string | null;
   players: RosterPlayerDto[];
   band: BandDto | null;
   rival: { teamId: string; teamName: string; classicGameName: string | null } | null;
+  // True when the viewer owns this team's roster — the web page shows the color editor.
+  canEditColors: boolean;
 }
 
 /** Full player page: identity plus every rating attribute and the owning team. */

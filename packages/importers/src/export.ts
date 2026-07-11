@@ -15,6 +15,10 @@ export const TEMPLATE_TEAM_COLUMNS = [
   'coach_name',
   'primary_color',
   'secondary_color',
+  'accent_color',
+  'helmet_color',
+  'home_jersey_color',
+  'away_jersey_color',
 ] as const;
 
 export const TEMPLATE_PLAYER_COLUMNS = [

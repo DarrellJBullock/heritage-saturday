@@ -272,9 +272,13 @@ model Team {
   conference     String?
   division       String?
   coachName      String? // denormalized display field; Coach entity is separate
-  // color/branding fields stored but unused by any Cap-1 screen
-  primaryColor   String?
-  secondaryColor String?
+  // Team colors (HEX). primary/secondary are the base; the rest flesh out branding.
+  primaryColor    String?
+  secondaryColor  String?
+  accentColor     String?
+  helmetColor     String?
+  homeJerseyColor String?
+  awayJerseyColor String?
 
   // Rivalry: a symmetric pairing within a league (generation sets both sides). classicGameName
   // is the named annual meeting. Homecoming is derived from the schedule, not stored.
