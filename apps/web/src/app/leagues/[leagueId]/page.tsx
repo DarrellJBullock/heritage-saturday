@@ -1,7 +1,12 @@
 import Link from 'next/link';
 import { ApiError } from '@/lib/api-client';
 import { serverApiClient } from '@/lib/api-client.server';
-import type { LeagueDetailDto, RosterDetailDto, TeamSummaryDto } from '@heritage-saturday/shared';
+import type {
+  LeagueDetailDto,
+  RosterDetailDto,
+  TeamSummaryDto,
+  RivalriesResponseDto,
+} from '@heritage-saturday/shared';
 import { hasCapability } from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { MembersPanel } from './members-panel';
 import { RosterVisibility } from './roster-visibility';
+import { RivalriesPanel } from './rivalries-panel';
 
 /**
  * Server Component: a league's home. Lists its teams (across all its rosters) and the actions
@@ -59,6 +65,16 @@ export default async function LeagueHomePage({
   const canImport = hasCapability(role, 'import');
   const canManageMembers = hasCapability(role, 'members:manage');
   const canSetVisibility = hasCapability(role, 'roster:visibility');
+  const canManageRivalries = hasCapability(role, 'rivalries:manage');
+
+  // Only fetched for commissioners (it recomputes scores); the panel is where emerging rivalries
+  // are approved or dismissed.
+  let rivalries: RivalriesResponseDto | null = null;
+  if (canManageRivalries && canPlay) {
+    rivalries = await serverApiClient
+      .get<RivalriesResponseDto>(`/leagues/${leagueId}/rivalries`)
+      .catch(() => null);
+  }
   const roleLabel = role === 'OWNER' ? '' : ` · you are a ${role.toLowerCase()}`;
 
   return (
@@ -126,10 +142,11 @@ export default async function LeagueHomePage({
       </div>
 
       {/* Management panels appear only for roles that can use them. */}
-      {(canManageMembers || canSetVisibility) && (
+      {(canManageMembers || canSetVisibility || rivalries) && (
         <div className="grid gap-3 sm:grid-cols-2">
           {canManageMembers && <MembersPanel leagueId={leagueId} />}
           {canSetVisibility && <RosterVisibility rosters={league.rosters} />}
+          {rivalries && <RivalriesPanel leagueId={leagueId} rivalries={rivalries} />}
         </div>
       )}
 

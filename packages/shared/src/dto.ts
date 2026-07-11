@@ -460,3 +460,24 @@ export interface LeadersResponseDto {
   // Aggregated over completed season games only (the same games standings count).
   categories: LeaderCategoryDto[];
 }
+
+// ---------------------------------------------------------------------------
+// Rivalries (secondary + emerging; primary rival lives on the team detail)
+// ---------------------------------------------------------------------------
+
+export interface RivalryDto {
+  id: string;
+  teamA: ScheduleTeamRefDto;
+  teamB: ScheduleTeamRefDto;
+  type: 'SECONDARY' | 'EMERGING';
+  // ACTIVE (a live secondary rival) or PENDING (an emerging pair awaiting commissioner approval).
+  status: 'ACTIVE' | 'PENDING';
+  // Rivalry score from head-to-head games (closeness- and frequency-weighted).
+  score: number;
+}
+
+export interface RivalriesResponseDto {
+  // Live secondary rivals, and emerging pairs the commissioner can approve or dismiss.
+  active: RivalryDto[];
+  emerging: RivalryDto[];
+}

@@ -1,7 +1,12 @@
 import Link from 'next/link';
 import { ApiError } from '@/lib/api-client';
 import { serverApiClient } from '@/lib/api-client.server';
-import type { TeamDetailDto, PlayerRatingsDto, TeamColorsDto } from '@heritage-saturday/shared';
+import type {
+  TeamDetailDto,
+  PlayerRatingsDto,
+  TeamColorsDto,
+  RivalriesResponseDto,
+} from '@heritage-saturday/shared';
 import { TeamColorsEditor } from '@/components/team-colors-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -75,6 +80,17 @@ export default async function TeamPage({
     );
   }
 
+  // This team's live secondary rivals (best-effort; the primary rival is on the team detail).
+  let secondaryRivals: { teamId: string; teamName: string }[] = [];
+  try {
+    const rivalries = await serverApiClient.get<RivalriesResponseDto>(`/leagues/${leagueId}/rivalries`);
+    secondaryRivals = rivalries.active
+      .filter((r) => r.teamA.teamId === teamId || r.teamB.teamId === teamId)
+      .map((r) => (r.teamA.teamId === teamId ? r.teamB : r.teamA));
+  } catch {
+    // Non-fatal — the rest of the team page still renders.
+  }
+
   const subtitle = [team.city, team.conference, team.division].filter(Boolean).join(' · ');
 
   return (
@@ -144,7 +160,7 @@ export default async function TeamPage({
         </CardContent>
       </Card>
 
-      {(team.band || team.rival) && (
+      {(team.band || team.rival || secondaryRivals.length > 0) && (
         <div className="grid gap-4 sm:grid-cols-2">
           {team.band && (
             <Card>
@@ -164,25 +180,43 @@ export default async function TeamPage({
               </CardContent>
             </Card>
           )}
-          {team.rival && (
+          {(team.rival || secondaryRivals.length > 0) && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Rivalry</CardTitle>
+                <CardTitle className="text-base">Rivalries</CardTitle>
               </CardHeader>
               <CardContent className="text-sm flex flex-col gap-2">
-                <div>
-                  <span className="text-muted-foreground">Rival: </span>
-                  <Link
-                    href={`/leagues/${leagueId}/teams/${team.rival.teamId}`}
-                    className="font-medium underline underline-offset-2 hover:text-foreground"
-                  >
-                    {team.rival.teamName}
-                  </Link>
-                </div>
-                {team.rival.classicGameName && (
+                {team.rival && (
+                  <div>
+                    <span className="text-muted-foreground">Primary rival: </span>
+                    <Link
+                      href={`/leagues/${leagueId}/teams/${team.rival.teamId}`}
+                      className="font-medium underline underline-offset-2 hover:text-foreground"
+                    >
+                      {team.rival.teamName}
+                    </Link>
+                  </div>
+                )}
+                {team.rival?.classicGameName && (
                   <div>
                     <span className="text-muted-foreground">The annual meeting: </span>
                     {team.rival.classicGameName}
+                  </div>
+                )}
+                {secondaryRivals.length > 0 && (
+                  <div>
+                    <span className="text-muted-foreground">Secondary rivals: </span>
+                    {secondaryRivals.map((r, i) => (
+                      <span key={r.teamId}>
+                        {i > 0 && ', '}
+                        <Link
+                          href={`/leagues/${leagueId}/teams/${r.teamId}`}
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          {r.teamName}
+                        </Link>
+                      </span>
+                    ))}
                   </div>
                 )}
               </CardContent>

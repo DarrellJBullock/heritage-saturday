@@ -145,6 +145,7 @@ model League {
   games       Game[]
   members     LeagueMember[]
   invitations Invitation[]
+  rivalries   Rivalry[]
 
   @@index([ownerId])
 }
@@ -296,8 +297,32 @@ model Team {
 
   teamGameStats TeamGameStats[]
 
+  // Secondary/emerging rivalries (scored from game history); primary rival is rivalTeamId above.
+  rivalriesAsA Rivalry[] @relation("RivalryTeamA")
+  rivalriesAsB Rivalry[] @relation("RivalryTeamB")
+
   @@unique([rosterId, externalTeamId])
   @@index([rosterId])
+}
+
+// A secondary or emerging rivalry between two teams in a league, scored from their head-to-head
+// games. The pair is stored canonically (teamAId < teamBId) so each pairing has one row.
+model Rivalry {
+  id       String @id @default(cuid())
+  leagueId String
+  league   League @relation(fields: [leagueId], references: [id])
+  teamAId  String
+  teamA    Team   @relation("RivalryTeamA", fields: [teamAId], references: [id])
+  teamBId  String
+  teamB    Team   @relation("RivalryTeamB", fields: [teamBId], references: [id])
+  type     String // SECONDARY | EMERGING
+  status   String // ACTIVE | PENDING | DISMISSED
+  approved Boolean  @default(false) // commissioner promoted an emerging pair; keep it active on recompute
+  score    Int
+  updatedAt DateTime @updatedAt
+
+  @@unique([leagueId, teamAId, teamBId])
+  @@index([leagueId])
 }
 
 // A team's marching band — original fiction, generated per team. Shown on the team page and

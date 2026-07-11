@@ -48,14 +48,14 @@ export type MemberRole = (typeof MEMBER_ROLES)[number];
 
 // Mutating capabilities gated by role. Reading LEAGUE-visible content is implicit for every
 // role and handled by the read-access guards, so it is not listed here.
-export const CAPABILITIES = ['import', 'roster:visibility', 'simulate', 'members:manage'] as const;
+export const CAPABILITIES = ['import', 'roster:visibility', 'simulate', 'rivalries:manage', 'members:manage'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 // Which capabilities each role holds. Single source of truth for both the API guards and the
 // web UI gating. Owner has everything; each lower role drops the most privileged capability.
 export const ROLE_CAPABILITIES: Record<LeagueRole, readonly Capability[]> = {
-  OWNER: ['import', 'roster:visibility', 'simulate', 'members:manage'],
-  COMMISSIONER: ['import', 'roster:visibility', 'simulate'],
+  OWNER: ['import', 'roster:visibility', 'simulate', 'rivalries:manage', 'members:manage'],
+  COMMISSIONER: ['import', 'roster:visibility', 'simulate', 'rivalries:manage'],
   MANAGER: ['import', 'roster:visibility'],
   VIEWER: [],
 };
