@@ -5,6 +5,7 @@ import type { TeamDetailDto, PlayerRatingsDto, TeamColorsDto } from '@heritage-s
 import { TeamColorsEditor } from '@/components/team-colors-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Table,
@@ -93,9 +94,18 @@ export default async function TeamPage({
           <h1 className="text-xl font-bold tracking-tight">{team.teamName}</h1>
           {subtitle && <p className="text-muted-foreground text-sm mt-1">{subtitle}</p>}
         </div>
-        {team.coachName && (
-          <Badge variant="secondary">Coach: {team.coachName}</Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {team.coachName && (
+            <Badge variant="secondary">Coach: {team.coachName}</Badge>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            render={<Link href={`/leagues/${leagueId}/teams/${teamId}/depth-chart`} />}
+          >
+            Depth Chart
+          </Button>
+        </div>
       </div>
 
       <Card>

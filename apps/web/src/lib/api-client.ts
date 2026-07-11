@@ -33,7 +33,7 @@ export class ApiError extends Error {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: BodyInit;
   headers?: Record<string, string>;
   /** Skip setting Content-Type: application/json (e.g. for multipart uploads). */
@@ -101,6 +101,11 @@ export const apiClient = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, {
       method: 'PATCH',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, {
+      method: 'PUT',
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),

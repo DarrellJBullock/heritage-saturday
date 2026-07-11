@@ -328,6 +328,32 @@ async function main() {
     genDc0.status === 200 && genDc0.body.legal === true && genDc0.body.warnings.length === 0, genDc0.body);
   ok('generated team B depth chart is legal', genDc1.status === 200 && genDc1.body.legal === true, genDc1.body);
 
+  // Manual depth-chart editing (owner-only). Use team[2] so it doesn't affect the game/determinism
+  // checks below, which run on teams[0] and [1].
+  const dcTeam = genTeams[2].id;
+  const auto = await api('GET', `/depth-charts/${dcTeam}`, { user: USER_A });
+  const saveDc = await api('PUT', `/depth-charts/${dcTeam}`, { user: USER_A, body: { entries: auto.body.entries } });
+  ok('PUT /depth-charts/:teamId saves a manual chart (200, source MANUAL, still legal)',
+    saveDc.status === 200 && saveDc.body.source === 'MANUAL' && saveDc.body.legal === true &&
+      saveDc.body.entries.length === auto.body.entries.length,
+    { status: saveDc.status, source: saveDc.body.source });
+  const rereadDc = await api('GET', `/depth-charts/${dcTeam}`, { user: USER_A });
+  ok('a manual chart is not regenerated on the next read (stays MANUAL)',
+    rereadDc.body.source === 'MANUAL' && rereadDc.body.entries.length === auto.body.entries.length,
+    rereadDc.body.source);
+  const missingStarter = await api('PUT', `/depth-charts/${dcTeam}`, {
+    user: USER_A,
+    body: { entries: auto.body.entries.filter((e) => e.position !== 'QB') },
+  });
+  ok('a chart missing a required starter is rejected (400)', missingStarter.status === 400, missingStarter.body);
+  const foreignPlayer = await api('PUT', `/depth-charts/${dcTeam}`, {
+    user: USER_A,
+    body: { entries: [...auto.body.entries, { position: 'QB', slot: 3, playerId: 'not-a-real-player' }] },
+  });
+  ok('an entry for a player not on the team is rejected (400)', foreignPlayer.status === 400, foreignPlayer.body);
+  const dcAsB = await api('PUT', `/depth-charts/${dcTeam}`, { user: USER_B, body: { entries: auto.body.entries } });
+  ok('a non-owner gets 404 saving a depth chart', dcAsB.status === 404, dcAsB.body);
+
   // The payoff: simulate a game between two generated teams with no import at all.
   const genGame = await api('POST', `/leagues/${gen.body.id}/games/simulate`, {
     user: USER_A,

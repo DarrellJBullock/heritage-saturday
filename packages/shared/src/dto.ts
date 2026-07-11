@@ -256,7 +256,7 @@ export interface DepthChartEntryDto {
 
 export interface DepthChartResponseDto {
   teamId: string;
-  source: 'IMPORTED' | 'AUTO_GENERATED';
+  source: 'IMPORTED' | 'AUTO_GENERATED' | 'MANUAL';
   entries: DepthChartEntryDto[];
   /**
    * True iff every required starting position is filled. Clients must branch on this
@@ -265,6 +265,13 @@ export interface DepthChartResponseDto {
    */
   legal: boolean;
   warnings: string[];
+}
+
+/** Replace a team's depth chart by hand (owner-only). Must fill every required starting
+ * position (slot 0), reference only that team's players, and place each player at their own
+ * position. The whole chart is sent, not a delta. */
+export interface SaveDepthChartRequestDto {
+  entries: DepthChartEntryDto[];
 }
 
 // ---------------------------------------------------------------------------
