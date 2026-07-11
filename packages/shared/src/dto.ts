@@ -169,31 +169,11 @@ export interface PlayerDto {
 }
 
 /**
- * Full team page: the summary fields plus the branding and coach the summary omits, and the
- * roster. `primaryColor`/`secondaryColor` are surfaced here (they were stored but never
- * serialized before the team page existed).
+ * Every rating attribute. Nullable because an imported roster (or a generated player at a
+ * position the attribute doesn't apply to) need not populate every column. Shared by the roster
+ * grid (RosterPlayerDto) and the player page (PlayerDetailDto).
  */
-export interface BandDto {
-  name: string;
-  style: string;
-  chant: string;
-  tradition: string;
-}
-
-export interface TeamDetailDto extends TeamSummaryDto {
-  primaryColor: string | null;
-  secondaryColor: string | null;
-  coachName: string | null;
-  players: PlayerDto[];
-  band: BandDto | null;
-  rival: { teamId: string; teamName: string; classicGameName: string | null } | null;
-}
-
-/** Full player page: identity plus every rating attribute and the owning team. Attributes are
- * nullable because an imported roster need not populate every column. */
-export interface PlayerDetailDto extends PlayerDto {
-  teamId: string;
-  teamName: string;
+export interface PlayerRatingsDto {
   speed: number | null;
   strength: number | null;
   awareness: number | null;
@@ -209,6 +189,36 @@ export interface PlayerDetailDto extends PlayerDto {
   coverage: number | null;
   kickPower: number | null;
   kickAccuracy: number | null;
+}
+
+/** A roster row with its full rating attributes, for the team page's ratings grid. */
+export interface RosterPlayerDto extends PlayerDto, PlayerRatingsDto {}
+
+/**
+ * Full team page: the summary fields plus the branding and coach the summary omits, and the
+ * roster. `primaryColor`/`secondaryColor` are surfaced here (they were stored but never
+ * serialized before the team page existed).
+ */
+export interface BandDto {
+  name: string;
+  style: string;
+  chant: string;
+  tradition: string;
+}
+
+export interface TeamDetailDto extends TeamSummaryDto {
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  coachName: string | null;
+  players: RosterPlayerDto[];
+  band: BandDto | null;
+  rival: { teamId: string; teamName: string; classicGameName: string | null } | null;
+}
+
+/** Full player page: identity plus every rating attribute and the owning team. */
+export interface PlayerDetailDto extends PlayerDto, PlayerRatingsDto {
+  teamId: string;
+  teamName: string;
 }
 
 // ---------------------------------------------------------------------------

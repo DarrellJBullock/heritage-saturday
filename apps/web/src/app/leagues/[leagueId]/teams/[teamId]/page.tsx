@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ApiError } from '@/lib/api-client';
 import { serverApiClient } from '@/lib/api-client.server';
-import type { TeamDetailDto } from '@heritage-saturday/shared';
+import type { TeamDetailDto, PlayerRatingsDto } from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -14,9 +14,29 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+// The full rating grid, in scouting-sheet order. Labels are the conventional 3-letter
+// abbreviations; a cell is "—" when the attribute doesn't apply to that player's position.
+const RATING_COLUMNS: { key: keyof PlayerRatingsDto; label: string }[] = [
+  { key: 'speed', label: 'SPD' },
+  { key: 'strength', label: 'STR' },
+  { key: 'awareness', label: 'AWR' },
+  { key: 'throwPower', label: 'THP' },
+  { key: 'throwAccuracy', label: 'THA' },
+  { key: 'catching', label: 'CAT' },
+  { key: 'routeRunning', label: 'RTE' },
+  { key: 'carry', label: 'CAR' },
+  { key: 'trucking', label: 'TRK' },
+  { key: 'passBlock', label: 'PBK' },
+  { key: 'runBlock', label: 'RBK' },
+  { key: 'tackle', label: 'TCK' },
+  { key: 'coverage', label: 'COV' },
+  { key: 'kickPower', label: 'KPW' },
+  { key: 'kickAccuracy', label: 'KAC' },
+];
+
 /**
- * Server Component: a team's page — branding, conference/division/coach, and the roster, each
- * player linking to their own page.
+ * Server Component: a team's page — branding, conference/division/coach, and the roster with
+ * every rating attribute, each player linking to their own page.
  */
 export default async function TeamPage({
   params,
@@ -124,16 +144,21 @@ export default async function TeamPage({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">#</TableHead>
-                <TableHead>Player</TableHead>
+                <TableHead className="whitespace-nowrap">Player</TableHead>
                 <TableHead>Pos</TableHead>
                 <TableHead className="text-right">OVR</TableHead>
+                {RATING_COLUMNS.map((c) => (
+                  <TableHead key={c.key} className="text-right" title={c.key}>
+                    {c.label}
+                  </TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {team.players.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="text-muted-foreground">{p.jerseyNumber}</TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <Link
                       href={`/leagues/${leagueId}/players/${p.id}`}
                       className="underline underline-offset-2 hover:text-foreground"
@@ -143,6 +168,11 @@ export default async function TeamPage({
                   </TableCell>
                   <TableCell>{p.position}</TableCell>
                   <TableCell className="text-right font-medium">{p.overallRating}</TableCell>
+                  {RATING_COLUMNS.map((c) => (
+                    <TableCell key={c.key} className="text-right tabular-nums">
+                      {p[c.key] ?? <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                  ))}
                 </TableRow>
               ))}
             </TableBody>

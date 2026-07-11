@@ -373,6 +373,17 @@ async function main() {
       teamDetail.body.players.every((p, i, a) => i === 0 || a[i - 1].jerseyNumber <= p.jerseyNumber),
     teamDetail.body.players?.length);
 
+  // Roster rows now carry every rating attribute (for the team page's ratings grid).
+  const RATING_KEYS = ['speed', 'strength', 'awareness', 'throwPower', 'throwAccuracy', 'catching',
+    'routeRunning', 'carry', 'trucking', 'passBlock', 'runBlock', 'tackle', 'coverage', 'kickPower', 'kickAccuracy'];
+  ok('every roster row exposes all rating attribute keys',
+    teamDetail.body.players.every((p) => RATING_KEYS.every((k) => k in p)),
+    Object.keys(teamDetail.body.players?.[0] ?? {}));
+  const qb = teamDetail.body.players.find((p) => p.position === 'QB');
+  ok('a QB has position-relevant ratings populated (throwPower/throwAccuracy numbers)',
+    !!qb && typeof qb.throwPower === 'number' && typeof qb.throwAccuracy === 'number',
+    qb && { thp: qb.throwPower, tha: qb.throwAccuracy });
+
   // Bands & rivalries: a generated team carries a band profile and one rival.
   ok('team detail includes a band profile (name, style, chant, tradition)',
     !!teamDetail.body.band && !!teamDetail.body.band.name && !!teamDetail.body.band.style &&
