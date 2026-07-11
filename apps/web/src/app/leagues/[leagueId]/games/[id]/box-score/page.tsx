@@ -105,9 +105,17 @@ export default async function BoxScorePage({ params }: PageProps) {
   return (
     <div className="flex flex-col gap-6">
       <div className="from-brand-strong via-brand to-brand-strong animate-in fade-in slide-in-from-bottom-2 rounded-2xl bg-gradient-to-br p-6 text-white shadow-lg duration-500">
-        <p className="text-[11px] font-medium uppercase tracking-widest text-white/50">
-          Final{tie ? ' · Tie' : ''}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-medium uppercase tracking-widest text-white/50">
+            Final{tie ? ' · Tie' : ''}
+          </p>
+          <Link
+            href={`/leagues/${leagueId}/games/${id}/live`}
+            className="bg-brand-accent text-brand-accent-foreground rounded-md px-2.5 py-1 text-xs font-semibold hover:opacity-90"
+          >
+            ▶ Watch Live
+          </Link>
+        </div>
         <div className="mt-3 flex flex-col gap-2">
           {scoreRows.map(({ team, score, won }) => (
             <div key={team.id} className="flex items-center justify-between gap-4">
