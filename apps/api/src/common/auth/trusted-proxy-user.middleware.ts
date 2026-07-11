@@ -30,6 +30,15 @@ declare module 'express' {
 @Injectable()
 export class TrustedProxyUserMiddleware implements NestMiddleware {
   use(req: Request, _res: Response, next: NextFunction): void {
+    // POST /auth/session establishes the user id, so it cannot already carry one. It is also
+    // excluded in app.module.ts, but NestMiddleware.exclude() does not reliably fire under
+    // forRoutes('*') — so guard it here too, tolerant of a stray leading or trailing slash.
+    // This is the definitive check; ApiKeyMiddleware still protects the route from anonymers.
+    if (req.method === 'POST' && /(^|\/)auth\/session\/?$/.test(req.path)) {
+      next();
+      return;
+    }
+
     const userId = req.header('x-user-id');
     if (!userId) {
       throw new UnauthorizedException({
