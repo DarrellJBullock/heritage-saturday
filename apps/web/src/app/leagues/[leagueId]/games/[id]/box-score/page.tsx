@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { ApiError } from '@/lib/api-client';
 import { serverApiClient } from '@/lib/api-client.server';
-import type { BoxScoreResponseDto, PlayerGameStatsDto } from '@heritage-saturday/shared';
+import type {
+  BoxScoreResponseDto,
+  PlayerGameStatsDto,
+  PlayByPlayResponseDto,
+} from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -15,6 +19,7 @@ import {
 } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
 import { SectionHeading } from '@/components/section-heading';
+import { PlayByPlayFeed } from '@/components/play-by-play-feed';
 import { WinProbChart } from './win-prob-chart';
 
 // Accent color per drive outcome for the drive feed.
@@ -78,6 +83,14 @@ export default async function BoxScorePage({ params }: PageProps) {
         <AlertDescription>{error}</AlertDescription>
       </Alert>
     );
+  }
+
+  // Play-by-play is best-effort — the rest of the box score renders even if it fails to load.
+  let pbp: PlayByPlayResponseDto | null = null;
+  try {
+    pbp = await serverApiClient.get<PlayByPlayResponseDto>(`/leagues/${leagueId}/games/${id}/plays`);
+  } catch {
+    pbp = null;
   }
 
   const tie = box.finalScore.home === box.finalScore.away;
@@ -184,6 +197,13 @@ export default async function BoxScorePage({ params }: PageProps) {
           ))}
         </div>
       </div>
+
+      {pbp && pbp.plays.length > 0 && (
+        <div>
+          <SectionHeading>Play-by-Play</SectionHeading>
+          <PlayByPlayFeed pbp={pbp} />
+        </div>
+      )}
 
       <div>
         <SectionHeading>Quarter-by-Quarter</SectionHeading>
