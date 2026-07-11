@@ -38,14 +38,16 @@ export default async function LeagueHomePage({
     );
   }
 
-  // Teams live under the league's rosters. Fetch each roster's teams so the home page can show
-  // the actual teams — for a generated league that's a single roster.
+  // Teams live under the league's rosters. Fetch each ACTIVE roster's teams so the home page
+  // shows the actual teams — archived rosters are hidden from the active view.
   const rosterDetails = await Promise.all(
-    league.rosters.map((r) =>
-      serverApiClient
-        .get<RosterDetailDto>(`/rosters/${r.id}`)
-        .catch(() => null),
-    ),
+    league.rosters
+      .filter((r) => !r.archived)
+      .map((r) =>
+        serverApiClient
+          .get<RosterDetailDto>(`/rosters/${r.id}`)
+          .catch(() => null),
+      ),
   );
   const teams: TeamSummaryDto[] = rosterDetails
     .filter((r): r is RosterDetailDto => r !== null)

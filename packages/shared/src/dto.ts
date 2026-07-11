@@ -139,6 +139,7 @@ export interface RosterListItemDto {
   teamCount: number;
   createdAt: string;
   visibility: Visibility;
+  archived: boolean;
 }
 
 export interface RosterDetailDto extends RosterListItemDto {

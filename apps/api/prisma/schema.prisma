@@ -250,6 +250,9 @@ model Roster {
   sourceImportId String?       @unique
   sourceImport   RosterImport? @relation(fields: [sourceImportId], references: [id])
   createdAt      DateTime      @default(now())
+  // Soft-archive: null = active, set = hidden from active views but restorable. Distinct from
+  // deletion, which is permanent and blocked once the roster's teams have played games.
+  archivedAt     DateTime?
 
   teams Team[]
 

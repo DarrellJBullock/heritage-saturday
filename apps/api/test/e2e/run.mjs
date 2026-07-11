@@ -883,6 +883,45 @@ async function main() {
     ok('(setup) could resolve a teamId for cross-user team/player/depth-chart checks', false, teamsAsOwnerA.body);
   }
 
+  // -------------------------------------------------------------------
+  section('Roster lifecycle — archive / restore / delete / import rollback');
+  // -------------------------------------------------------------------
+  // A fresh imported roster (no games) can go through the full lifecycle. Use throwaway imports
+  // so rosterIdA (used by the game-setup section) is untouched.
+  const lc = await uploadAndCommit(USER_A, 'valid-roster.csv', 'lifecycle');
+  const lcRoster = lc.commit.body.rosterId;
+
+  const arch = await api('PATCH', `/rosters/${lcRoster}/archive`, { user: USER_A });
+  ok('archive marks the roster archived (200)', arch.status === 200 && arch.body.archived === true, arch.body);
+  const detailAfterArchive = await api('GET', `/leagues/${LEAGUE_A}`, { user: USER_A });
+  ok('an archived roster is flagged in the league detail', detailAfterArchive.body.rosters.some((r) => r.id === lcRoster && r.archived === true), null);
+  ok('the archived roster is still fetchable by id', (await api('GET', `/rosters/${lcRoster}`, { user: USER_A })).status === 200);
+
+  const restore = await api('PATCH', `/rosters/${lcRoster}/restore`, { user: USER_A });
+  ok('restore clears the archived flag (200)', restore.status === 200 && restore.body.archived === false, restore.body);
+
+  ok('deleting a fresh roster (no games) is 204', (await api('DELETE', `/rosters/${lcRoster}`, { user: USER_A })).status === 204);
+  ok('the deleted roster is gone (404)', (await api('GET', `/rosters/${lcRoster}`, { user: USER_A })).status === 404);
+
+  // A roster whose teams have played games cannot be deleted — archive is the answer.
+  ok('deleting a roster with games is 409 ROSTER_HAS_GAMES',
+    (await api('DELETE', `/rosters/${genRosterId}`, { user: USER_A })).status === 409);
+  ok('archiving a roster with games still works',
+    (await api('PATCH', `/rosters/${genRosterId}/archive`, { user: USER_A })).body.archived === true);
+  ok('...and restoring it back', (await api('PATCH', `/rosters/${genRosterId}/restore`, { user: USER_A })).body.archived === false);
+
+  // Import rollback: undo a committed import.
+  const rb = await uploadAndCommit(USER_A, 'valid-roster.csv', 'rollback');
+  const rbRoster = rb.commit.body.rosterId;
+  const rollback = await api('POST', `/leagues/${LEAGUE_A}/imports/${rb.importId}/rollback`, { user: USER_A });
+  ok('rolling back a committed import is 200', rollback.status === 200, rollback.body);
+  ok('the rolled-back import\'s roster is gone', (await api('GET', `/rosters/${rbRoster}`, { user: USER_A })).status === 404);
+  ok('the import is re-committable after rollback (preview 200)', (await api('GET', `/leagues/${LEAGUE_A}/imports/${rb.importId}/preview`, { user: USER_A })).body.status === 'PENDING');
+  ok('rolling back again is 409 (nothing committed)', (await api('POST', `/leagues/${LEAGUE_A}/imports/${rb.importId}/rollback`, { user: USER_A })).status === 409);
+
+  // A non-member of the league cannot delete its rosters (404 — existence hidden).
+  ok('a non-member gets 404 deleting a roster', (await api('DELETE', `/rosters/${genRosterId}`, { user: DEV_LOGIN_USER })).status === 404);
+
   await proxyIdentitySection(rosterIdA, validCsv.importId);
 
   // -------------------------------------------------------------------

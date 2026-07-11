@@ -155,17 +155,23 @@ export class LeaguesService {
     const isOwner = league.ownerId === userId;
     const role = isOwner ? 'OWNER' : (league.members[0]?.role ?? 'VIEWER');
     // The guard already admitted the caller; a non-owner here is necessarily a member.
+    // The owner sees all rosters (archived ones flagged, so the UI can offer restore/delete);
+    // a member sees only active LEAGUE-visible rosters (archived = put away, hidden from them).
     const visibleRosters = isOwner
       ? league.rosters
-      : league.rosters.filter((r) => r.visibility === 'LEAGUE');
+      : league.rosters.filter((r) => r.visibility === 'LEAGUE' && r.archivedAt === null);
 
-    const teamCount = visibleRosters.reduce((sum, r) => sum + r._count.teams, 0);
+    // teamCount reflects the ACTIVE league — archived rosters' teams are not counted.
+    const teamCount = visibleRosters
+      .filter((r) => r.archivedAt === null)
+      .reduce((sum, r) => sum + r._count.teams, 0);
     const rosters: RosterListItemDto[] = visibleRosters.map((r) => ({
       id: r.id,
       name: r.name,
       teamCount: r._count.teams,
       createdAt: r.createdAt.toISOString(),
       visibility: r.visibility,
+      archived: r.archivedAt !== null,
     }));
 
     return {

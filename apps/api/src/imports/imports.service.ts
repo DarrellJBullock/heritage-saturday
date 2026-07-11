@@ -13,6 +13,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { DomainException } from '../common/errors/domain-exception';
 import { ENTITY_SHEETS } from './imports.constants';
 import { classifyDepthChartRows, DepthChartRowRef } from './depth-chart-projection';
+import { RostersService } from '../rosters/rosters.service';
 
 export interface UploadedFile {
   originalname: string;
@@ -22,7 +23,41 @@ export interface UploadedFile {
 
 @Injectable()
 export class ImportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rostersService: RostersService,
+  ) {}
+
+  /**
+   * Undo a committed import: delete the roster it created and return the import to PENDING so it
+   * can be committed again. Subject to the same rule as roster deletion — blocked (409) if that
+   * roster's teams have already played games.
+   */
+  async rollback(importId: string, leagueId: string): Promise<{ importId: string }> {
+    const roImport = await this.prisma.rosterImport.findUnique({
+      where: { id: importId },
+      include: { roster: { select: { id: true } } },
+    });
+    if (!roImport || roImport.leagueId !== leagueId) {
+      throw new DomainException(404, 'NOT_FOUND', 'Import not found');
+    }
+    if (roImport.status !== 'COMMITTED' || !roImport.roster) {
+      throw new DomainException(409, 'NOT_COMMITTED', 'This import has no committed roster to roll back');
+    }
+    const rosterId = roImport.roster.id;
+    if (await this.rostersService.rosterHasGames(rosterId)) {
+      throw new DomainException(409, 'ROSTER_HAS_GAMES', 'The imported roster has games; archive it instead');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.rostersService.deleteRosterCascade(tx, rosterId);
+      await tx.rosterImport.update({
+        where: { id: importId },
+        data: { status: 'PENDING', committedAt: null, createdCount: 0, updatedCount: 0, skippedCount: 0, failedCount: 0 },
+      });
+    });
+    return { importId };
+  }
 
   async uploadRoster(
     file: UploadedFile,
