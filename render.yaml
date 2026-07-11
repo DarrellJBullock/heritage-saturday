@@ -32,9 +32,10 @@ services:
     region: oregon
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: . # monorepo: the API build needs packages/* and the root lockfile
-    # Run pending migrations, then start. Safe on a single instance; if you ever scale to
-    # multiple replicas, move this to a preDeploy command so replicas don't race the migration.
-    dockerCommand: sh -c "node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma && node apps/api/dist/main.js"
+    # Run pending migrations, then start (see apps/api/docker-entrypoint.sh). A single script
+    # path, not an inline "a && b" — Render does not reliably parse a compound shell command.
+    # Safe on a single instance; for multiple replicas, migrate in a preDeploy step instead.
+    dockerCommand: sh /app/apps/api/docker-entrypoint.sh
     envVars:
       - key: PORT # the API reads PORT (main.ts); pin it so heritage-web can address it internally
         value: 3001

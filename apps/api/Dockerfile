@@ -79,6 +79,9 @@ COPY --from=builder --chown=nestjs:nodejs /app/apps/api/dist ./apps/api/dist
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/package.json ./apps/api/
 # Schema + migrations ship so `prisma migrate deploy` can run against this image.
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/prisma ./apps/api/prisma
+# Deploy entrypoint (migrate + start) for hosts that run migrations at deploy time. Not the
+# default CMD — see the script's header and the note below.
+COPY --from=builder --chown=nestjs:nodejs /app/apps/api/docker-entrypoint.sh ./apps/api/docker-entrypoint.sh
 
 USER nestjs
 EXPOSE 3001
