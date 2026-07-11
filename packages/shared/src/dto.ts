@@ -291,6 +291,30 @@ export interface BoxScoreTeamDto {
   teamName: string;
 }
 
+// A single possession, reconstructed from the drive-level game events.
+export interface DriveSummaryDto {
+  quarter: number;
+  side: 'home' | 'away';
+  teamName: string;
+  yards: number;
+  outcome: string; // engine-defined: TD | FG | PUNT | TURNOVER | DOWNS | END_HALF | ...
+  points: number; // 0 unless the drive scored
+}
+
+// A standout player on a team, for the Game Center "top performers" section.
+export interface PerformerDto {
+  playerId: string;
+  name: string;
+  position: Position;
+  role: 'PASSING' | 'RUSHING' | 'RECEIVING' | 'DEFENSE';
+  line: string; // a short human stat line, e.g. "18/27, 243 yds, 2 TD"
+}
+
+export interface WinProbabilityPointDto {
+  quarter: number;
+  homeWinProb: number; // 0..1; a labeled heuristic, terminal point pinned to the actual winner
+}
+
 export interface BoxScoreResponseDto {
   gameId: string;
   seed: string;
@@ -300,6 +324,11 @@ export interface BoxScoreResponseDto {
   quarterByQuarter: QuarterScoreDto[];
   teamStats: { home: TeamGameStatsDto; away: TeamGameStatsDto };
   playerStats: { home: PlayerGameStatsDto[]; away: PlayerGameStatsDto[] };
+  // Game Center (derived server-side from the stored game; no re-simulation).
+  drives: DriveSummaryDto[];
+  leaders: { home: PerformerDto[]; away: PerformerDto[] };
+  winProbability: WinProbabilityPointDto[];
+  recap: string;
 }
 
 // ---------------------------------------------------------------------------

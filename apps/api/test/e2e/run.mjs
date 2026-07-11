@@ -305,6 +305,28 @@ async function main() {
     genBox.status === 200 && !!genBox.body.teams?.home && !!genBox.body.teams?.away &&
       genBox.body.playerStats?.home.length > 0, genBox.body);
 
+  // Game Center (broadcast slice 1) — derived server-side from the stored game.
+  const gc = genBox.body;
+  ok('box score includes a drive-by-drive feed (each drive has an outcome + numeric yards)',
+    Array.isArray(gc.drives) && gc.drives.length > 0 &&
+      gc.drives.every((d) => typeof d.outcome === 'string' && typeof d.yards === 'number' &&
+        (d.side === 'home' || d.side === 'away')),
+    gc.drives?.slice(0, 2));
+  ok('top performers list a leading passer for each side',
+    gc.leaders?.home?.some((p) => p.role === 'PASSING' && p.name) &&
+      gc.leaders?.away?.some((p) => p.role === 'PASSING' && p.name),
+    gc.leaders);
+  ok('the recap names the winning team and reads as a sentence',
+    typeof gc.recap === 'string' && gc.recap.length > 10 &&
+      (gc.recap.includes(gc.teams.home.teamName) || gc.recap.includes(gc.teams.away.teamName)),
+    gc.recap);
+  const wp = gc.winProbability;
+  const homeWon = gc.finalScore.home > gc.finalScore.away;
+  ok('win probability starts at 0.5 and its terminal point matches the actual winner',
+    Array.isArray(wp) && wp.length >= 2 && wp[0].homeWinProb === 0.5 &&
+      wp[wp.length - 1].homeWinProb === (homeWon ? 1 : 0),
+    { first: wp?.[0], last: wp?.[wp.length - 1], homeWon });
+
   // A generated league must not be playable across leagues: its teams are not in the empty LEAGUE_A.
   const crossLeague = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
     user: USER_A,
