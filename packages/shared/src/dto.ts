@@ -367,6 +367,28 @@ export interface WinProbabilityPointDto {
   homeWinProb: number; // 0..1; a labeled heuristic, terminal point pinned to the actual winner
 }
 
+// A single play in the play-by-play feed (derived from the engine's PLAY events).
+export interface PlayDto {
+  quarter: number;
+  down: number;
+  yardsToGo: number;
+  yardLine: number; // 1-99 from the offense's own goal line (100 = touchdown)
+  clock: string; // MM:SS remaining in the quarter
+  playType: string; // RUN | PASS | FIELD_GOAL | PUNT
+  yards: number;
+  result: string; // GAIN | FIRST_DOWN | TOUCHDOWN | FIELD_GOAL_GOOD | PUNT | INTERCEPTION | ...
+  description: string;
+  teamId: string | null; // the possessing team
+  side: 'home' | 'away';
+}
+
+export interface PlayByPlayResponseDto {
+  gameId: string;
+  teams: { home: BoxScoreTeamDto; away: BoxScoreTeamDto };
+  // Every play, in game order.
+  plays: PlayDto[];
+}
+
 export interface BoxScoreResponseDto {
   gameId: string;
   seed: string;

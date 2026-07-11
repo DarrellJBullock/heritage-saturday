@@ -13,6 +13,8 @@ import {
   BoxScoreResponseDto,
   DriveSummaryDto,
   PerformerDto,
+  PlayByPlayResponseDto,
+  PlayDto,
   PlayerGameStatsDto,
   SimulateGameResponseDto,
   WinProbabilityPointDto,
@@ -242,6 +244,45 @@ export class GamesService {
         })),
       });
     }
+  }
+
+  /** Ordered play-by-play, derived from the engine's PLAY events (no re-simulation). */
+  async getPlayByPlay(gameId: string, leagueId: string): Promise<PlayByPlayResponseDto> {
+    const game = await this.prisma.game.findUnique({
+      where: { id: gameId },
+      include: {
+        homeTeam: { select: { id: true, teamName: true } },
+        awayTeam: { select: { id: true, teamName: true } },
+        events: { where: { type: 'PLAY' }, orderBy: { sequence: 'asc' } },
+      },
+    });
+    if (!game || game.leagueId !== leagueId) {
+      throw new DomainException(404, 'NOT_FOUND', 'Game not found');
+    }
+    const plays: PlayDto[] = game.events.map((e) => {
+      const p = (e.payload ?? {}) as Record<string, unknown>;
+      return {
+        quarter: e.quarter,
+        down: Number(p.down ?? 0),
+        yardsToGo: Number(p.yardsToGo ?? 0),
+        yardLine: Number(p.yardLine ?? 0),
+        clock: String(p.clock ?? ''),
+        playType: String(p.playType ?? ''),
+        yards: Number(p.yards ?? 0),
+        result: String(p.result ?? ''),
+        description: String(p.description ?? ''),
+        teamId: e.teamId,
+        side: e.teamId === game.homeTeamId ? 'home' : 'away',
+      };
+    });
+    return {
+      gameId: game.id,
+      teams: {
+        home: { id: game.homeTeam.id, teamName: game.homeTeam.teamName },
+        away: { id: game.awayTeam.id, teamName: game.awayTeam.teamName },
+      },
+      plays,
+    };
   }
 
   async getBoxScore(gameId: string, leagueId: string): Promise<BoxScoreResponseDto> {

@@ -371,6 +371,18 @@ async function main() {
     genBox.status === 200 && !!genBox.body.teams?.home && !!genBox.body.teams?.away &&
       genBox.body.playerStats?.home.length > 0, genBox.body);
 
+  // Play-by-play (broadcast layer) — plays are decomposed from the stored drives, not re-simulated.
+  const pbp = await api('GET', `/leagues/${gen.body.id}/games/${genGame.body.gameId}/plays`, { user: USER_A });
+  ok('GET /games/:id/plays returns an ordered play-by-play feed',
+    pbp.status === 200 && Array.isArray(pbp.body.plays) && pbp.body.plays.length > 0 &&
+      pbp.body.plays.every((p) => typeof p.down === 'number' && !!p.playType && !!p.result && !!p.description &&
+        (p.side === 'home' || p.side === 'away')),
+    { status: pbp.status, count: pbp.body.plays?.length });
+  const totalPlayYards = pbp.body.plays.reduce((n, p) => n + p.yards, 0);
+  const totalTeamYards = genBox.body.teamStats.home.totalYards + genBox.body.teamStats.away.totalYards;
+  ok('play yards sum exactly to the box score total team yards (decomposition preserves the result)',
+    totalPlayYards === totalTeamYards, { totalPlayYards, totalTeamYards });
+
   // Game Center (broadcast slice 1) — derived server-side from the stored game.
   const gc = genBox.body;
   ok('box score includes a drive-by-drive feed (each drive has an outcome + numeric yards)',
@@ -1321,6 +1333,14 @@ async function main() {
   }
   ok('same seed produces identical full per-player stat line', JSON.stringify(sortedPlayerStats(norm1?.playerStats)) === JSON.stringify(sortedPlayerStats(norm2?.playerStats)),
     { a: sortedPlayerStats(norm1?.playerStats), b: sortedPlayerStats(norm2?.playerStats) });
+
+  // The play-by-play is decomposed with a per-drive RNG derived from the same seed, so it too is
+  // deterministic — same seed, identical play feed.
+  const pbp1 = await api('GET', `/leagues/${LEAGUE_A}/games/${gameId1}/plays`, { user: USER_A });
+  const pbp2 = await api('GET', `/leagues/${LEAGUE_A}/games/${gameId2}/plays`, { user: USER_A });
+  ok('same seed produces an identical play-by-play feed',
+    pbp1.body.plays.length > 0 && JSON.stringify(pbp1.body.plays) === JSON.stringify(pbp2.body.plays),
+    { a: pbp1.body.plays?.length, b: pbp2.body.plays?.length });
 
   const runGameDiffSeed = await api('POST', `/leagues/${LEAGUE_A}/games/simulate`, {
     user: USER_A,

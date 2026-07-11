@@ -32,4 +32,10 @@ export class GamesController {
   boxScore(@Param('leagueId') leagueId: string, @Param('id') id: string) {
     return this.gamesService.getBoxScore(id, leagueId);
   }
+
+  @Get(':id/plays')
+  @UseGuards(LeagueByParamReadAccessGuard)
+  plays(@Param('leagueId') leagueId: string, @Param('id') id: string) {
+    return this.gamesService.getPlayByPlay(id, leagueId);
+  }
 }

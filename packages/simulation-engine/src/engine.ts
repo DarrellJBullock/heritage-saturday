@@ -1,5 +1,6 @@
 import { createRng, rngInt, Rng } from '@heritage-saturday/shared';
 import { DEFENSE_ARCHETYPE_CONFIG, OFFENSE_ARCHETYPE_CONFIG } from './archetypes';
+import { decomposeDrive } from './plays';
 import {
   SimDepthChartEntry,
   SimGameEvent,
@@ -371,6 +372,10 @@ export function simulateGame(input: SimulationInput): SimulationResult {
   const quarterByQuarter: { quarter: number; home: number; away: number }[] = [];
   let homeScore = 0;
   let awayScore = 0;
+  // Play-by-play bookkeeping. driveOrdinal seeds a per-drive RNG so the main stream is untouched;
+  // clockRemaining is a synthesized game clock (900s per quarter), for presentation only.
+  let driveOrdinal = 0;
+  let clockRemaining = 900;
 
   function runPossession(quarter: number, side: 'home' | 'away'): number {
     const offense = side === 'home' ? input.home : input.away;
@@ -383,6 +388,43 @@ export function simulateGame(input: SimulationInput): SimulationResult {
     teamStats[side].rushingYards += result.rushYards;
     teamStats[side].timeOfPossessionSeconds += result.possessionSeconds;
     if (result.outcome === 'TURNOVER') teamStats[side].turnovers += 1;
+
+    // Decompose the drive into plays with an INDEPENDENT per-drive RNG — this never touches the
+    // main `rng`, so scores, stats, and every existing result stay byte-for-byte identical.
+    const playRng = createRng(`${input.seed}:play:${driveOrdinal}`);
+    driveOrdinal += 1;
+    const plays = decomposeDrive(
+      playRng,
+      {
+        outcome: result.outcome,
+        yards: result.yards,
+        passYards: result.passYards,
+        rushYards: result.rushYards,
+        possessionSeconds: result.possessionSeconds,
+      },
+      clockRemaining,
+    );
+    clockRemaining = Math.max(0, clockRemaining - result.possessionSeconds);
+    // Emit plays BEFORE the DRIVE_END so DRIVE_END is still immediately followed by its SCORE
+    // (the box score's drive builder relies on that adjacency).
+    for (const p of plays) {
+      events.push({
+        quarter,
+        sequence: sequence++,
+        type: 'PLAY',
+        teamId: offense.teamId,
+        payload: {
+          down: p.down,
+          yardsToGo: p.yardsToGo,
+          yardLine: p.yardLine,
+          clock: p.clock,
+          playType: p.playType,
+          yards: p.yards,
+          result: p.result,
+          description: p.description,
+        },
+      });
+    }
 
     events.push({
       quarter,
@@ -417,6 +459,7 @@ export function simulateGame(input: SimulationInput): SimulationResult {
   const POSSESSIONS_PER_TEAM_PER_QUARTER = 3;
 
   for (let quarter = 1; quarter <= 4; quarter++) {
+    clockRemaining = 900; // fresh 15:00 each quarter (presentation clock)
     let qHome = 0;
     let qAway = 0;
     const firstSide: 'home' | 'away' = quarter % 2 === 1 ? 'home' : 'away';
@@ -437,6 +480,7 @@ export function simulateGame(input: SimulationInput): SimulationResult {
   // first score wins, capped to avoid unbounded loops; unresolved after the cap
   // ends in a tie (assumption #6).
   if (homeScore === awayScore) {
+    clockRemaining = 600; // 10:00 OT period (presentation clock)
     const OT_MAX_POSSESSIONS = 6;
     let otHome = 0;
     let otAway = 0;
