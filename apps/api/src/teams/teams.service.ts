@@ -96,6 +96,7 @@ function toPlayerDto(p: {
   jerseyNumber: number;
   overallRating: number;
   archetype: string | null;
+  headshotUrl: string | null;
 }): PlayerDto {
   return {
     id: p.id,
@@ -106,6 +107,7 @@ function toPlayerDto(p: {
     jerseyNumber: p.jerseyNumber,
     overallRating: p.overallRating,
     archetype: p.archetype,
+    headshotUrl: p.headshotUrl,
   };
 }
 

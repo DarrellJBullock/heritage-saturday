@@ -166,6 +166,13 @@ export interface PlayerDto {
   jerseyNumber: number;
   overallRating: number;
   archetype: string | null;
+  // Player photo, an https image URL, or null for the initials placeholder.
+  headshotUrl: string | null;
+}
+
+/** Set (or clear, with null/empty) a player's headshot photo URL. */
+export interface SetHeadshotRequestDto {
+  headshotUrl: string | null;
 }
 
 /**
@@ -219,6 +226,8 @@ export interface TeamDetailDto extends TeamSummaryDto {
 export interface PlayerDetailDto extends PlayerDto, PlayerRatingsDto {
   teamId: string;
   teamName: string;
+  // True when the viewer owns this player's roster — the web page shows the headshot editor.
+  canEditHeadshot: boolean;
 }
 
 // ---------------------------------------------------------------------------

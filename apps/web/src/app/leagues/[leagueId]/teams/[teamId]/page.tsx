@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { PlayerAvatar } from '@/components/player-avatar';
 
 // The full rating grid, in scouting-sheet order. Labels are the conventional 3-letter
 // abbreviations; a cell is "—" when the attribute doesn't apply to that player's position.
@@ -159,12 +160,19 @@ export default async function TeamPage({
                 <TableRow key={p.id}>
                   <TableCell className="text-muted-foreground">{p.jerseyNumber}</TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <Link
-                      href={`/leagues/${leagueId}/players/${p.id}`}
-                      className="underline underline-offset-2 hover:text-foreground"
-                    >
-                      {p.firstName} {p.lastName}
-                    </Link>
+                    <span className="flex items-center gap-2">
+                      <PlayerAvatar
+                        url={p.headshotUrl}
+                        name={`${p.firstName} ${p.lastName}`}
+                        size={24}
+                      />
+                      <Link
+                        href={`/leagues/${leagueId}/players/${p.id}`}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        {p.firstName} {p.lastName}
+                      </Link>
+                    </span>
                   </TableCell>
                   <TableCell>{p.position}</TableCell>
                   <TableCell className="text-right font-medium">{p.overallRating}</TableCell>

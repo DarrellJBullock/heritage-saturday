@@ -5,6 +5,8 @@ import type { PlayerDetailDto } from '@heritage-saturday/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { PlayerAvatar } from '@/components/player-avatar';
+import { HeadshotEditor } from '@/components/headshot-editor';
 
 // Attribute label + accessor, in display order. Only populated (non-null) ones are shown, since
 // an imported roster need not fill every column.
@@ -60,24 +62,38 @@ export default async function PlayerPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">
-            #{player.jerseyNumber} {player.firstName} {player.lastName}
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {player.position}
-            {player.archetype ? ` · ${player.archetype}` : ''} ·{' '}
-            <Link
-              href={`/leagues/${leagueId}/teams/${player.teamId}`}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              {player.teamName}
-            </Link>
-          </p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-4">
+          <PlayerAvatar url={player.headshotUrl} name={`${player.firstName} ${player.lastName}`} size={64} />
+          <div>
+            <h1 className="text-xl font-semibold">
+              #{player.jerseyNumber} {player.firstName} {player.lastName}
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              {player.position}
+              {player.archetype ? ` · ${player.archetype}` : ''} ·{' '}
+              <Link
+                href={`/leagues/${leagueId}/teams/${player.teamId}`}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                {player.teamName}
+              </Link>
+            </p>
+          </div>
         </div>
         <Badge className="text-base">OVR {player.overallRating}</Badge>
       </div>
+
+      {player.canEditHeadshot && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Player photo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <HeadshotEditor playerId={player.id} currentUrl={player.headshotUrl} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

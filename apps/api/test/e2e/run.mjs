@@ -413,11 +413,33 @@ async function main() {
         playerDetail.body[k] !== null),
     playerDetail.body);
 
+  // Headshots (URL): generated players start with none; the owner can set/clear an https URL.
+  ok('a generated player has no headshot yet and the owner can edit it',
+    playerDetail.body.headshotUrl === null && playerDetail.body.canEditHeadshot === true,
+    { url: playerDetail.body.headshotUrl, canEdit: playerDetail.body.canEditHeadshot });
+  const PHOTO = 'https://example.com/players/qb.jpg';
+  const setPhoto = await api('PATCH', `/players/${aPlayerId}/headshot`, { user: USER_A, body: { headshotUrl: PHOTO } });
+  ok('PATCH /players/:id/headshot sets the photo URL (200)',
+    setPhoto.status === 200 && setPhoto.body.headshotUrl === PHOTO, setPhoto.body);
+  const afterSet = await api('GET', `/teams/${genTeams[0].id}`, { user: USER_A });
+  ok('the headshot shows on the roster row too',
+    afterSet.body.players.find((p) => p.id === aPlayerId)?.headshotUrl === PHOTO,
+    afterSet.body.players.find((p) => p.id === aPlayerId)?.headshotUrl);
+  const badProto = await api('PATCH', `/players/${aPlayerId}/headshot`, { user: USER_A, body: { headshotUrl: 'http://example.com/x.jpg' } });
+  ok('a non-https headshot URL is rejected (400)', badProto.status === 400, badProto.body);
+  const badUrl = await api('PATCH', `/players/${aPlayerId}/headshot`, { user: USER_A, body: { headshotUrl: 'not-a-url' } });
+  ok('a malformed headshot URL is rejected (400)', badUrl.status === 400, badUrl.body);
+  const clearPhoto = await api('PATCH', `/players/${aPlayerId}/headshot`, { user: USER_A, body: { headshotUrl: null } });
+  ok('a null headshot URL clears the photo (200, null)',
+    clearPhoto.status === 200 && clearPhoto.body.headshotUrl === null, clearPhoto.body);
+
   // Ownership: user B can reach neither the team nor the player (404, not 403, not data).
   const teamAsB = await api('GET', `/teams/${genTeams[0].id}`, { user: USER_B });
   ok('user B gets 404 reading user A\'s team detail', teamAsB.status === 404, teamAsB.body);
   const playerAsB = await api('GET', `/players/${aPlayerId}`, { user: USER_B });
   ok('user B gets 404 reading user A\'s player detail', playerAsB.status === 404, playerAsB.body);
+  const setPhotoAsB = await api('PATCH', `/players/${aPlayerId}/headshot`, { user: USER_B, body: { headshotUrl: PHOTO } });
+  ok('user B gets 404 trying to set the photo on user A\'s player', setPhotoAsB.status === 404, setPhotoAsB.body);
 
   // -------------------------------------------------------------------
   section('Schedule & standings — round-robin season, week-by-week, computed standings');
