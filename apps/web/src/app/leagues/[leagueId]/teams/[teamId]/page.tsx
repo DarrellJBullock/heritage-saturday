@@ -112,7 +112,7 @@ export default async function TeamPage({
         <CardHeader>
           <CardTitle className="text-base">Team Colors</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
           {team.canEditColors ? (
             <TeamColorsEditor teamId={team.id} colors={team} />
           ) : COLOR_FIELDS.some((f) => team![f.key]) ? (
@@ -129,6 +129,17 @@ export default async function TeamPage({
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">No colors set.</p>
+          )}
+
+          {team.colorWarnings.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {team.colorWarnings.map((w, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-500">
+                  <span aria-hidden>⚠</span>
+                  <span>{w}</span>
+                </li>
+              ))}
+            </ul>
           )}
         </CardContent>
       </Card>
