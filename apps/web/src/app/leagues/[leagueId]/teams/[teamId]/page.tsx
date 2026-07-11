@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { ApiError } from '@/lib/api-client';
 import { serverApiClient } from '@/lib/api-client.server';
-import type { TeamDetailDto, PlayerRatingsDto } from '@heritage-saturday/shared';
+import type { TeamDetailDto, PlayerRatingsDto, TeamColorsDto } from '@heritage-saturday/shared';
+import { TeamColorsEditor } from '@/components/team-colors-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -14,6 +15,16 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { PlayerAvatar } from '@/components/player-avatar';
+
+// The team-color fields, in display order.
+const COLOR_FIELDS: { key: keyof TeamColorsDto; label: string }[] = [
+  { key: 'primaryColor', label: 'Primary' },
+  { key: 'secondaryColor', label: 'Secondary' },
+  { key: 'accentColor', label: 'Accent' },
+  { key: 'helmetColor', label: 'Helmet' },
+  { key: 'homeJerseyColor', label: 'Home jersey' },
+  { key: 'awayJerseyColor', label: 'Away jersey' },
+];
 
 // The full rating grid, in scouting-sheet order. Labels are the conventional 3-letter
 // abbreviations; a cell is "—" when the attribute doesn't apply to that player's position.
@@ -86,6 +97,31 @@ export default async function TeamPage({
           <Badge variant="secondary">Coach: {team.coachName}</Badge>
         )}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Team Colors</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {team.canEditColors ? (
+            <TeamColorsEditor teamId={team.id} colors={team} />
+          ) : COLOR_FIELDS.some((f) => team![f.key]) ? (
+            <div className="flex flex-wrap gap-4">
+              {COLOR_FIELDS.filter((f) => team![f.key]).map((f) => (
+                <div key={f.key} className="flex items-center gap-2 text-sm">
+                  <span
+                    className="h-6 w-6 rounded border"
+                    style={{ background: team![f.key] as string }}
+                  />
+                  <span className="text-muted-foreground">{f.label}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">No colors set.</p>
+          )}
+        </CardContent>
+      </Card>
 
       {(team.band || team.rival) && (
         <div className="grid gap-4 sm:grid-cols-2">

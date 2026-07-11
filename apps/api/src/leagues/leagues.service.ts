@@ -239,6 +239,10 @@ export class LeaguesService {
       coach_name: t.coachName,
       primary_color: t.primaryColor,
       secondary_color: t.secondaryColor,
+      accent_color: t.accentColor,
+      helmet_color: t.helmetColor,
+      home_jersey_color: t.homeJerseyColor,
+      away_jersey_color: t.awayJerseyColor,
     }));
 
     const playerRows: ExportRow[] = teams.flatMap((t) =>
