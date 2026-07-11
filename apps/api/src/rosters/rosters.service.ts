@@ -111,6 +111,9 @@ export class RostersService {
     await tx.depthChart.deleteMany({ where: { team: { rosterId } } });
     await tx.coach.deleteMany({ where: { team: { rosterId } } });
     await tx.player.deleteMany({ where: { team: { rosterId } } });
+    // Bands block team deletion (Band_teamId_fkey is ON DELETE RESTRICT), so clear them first.
+    // The rival self-relation is ON DELETE SET NULL, so deleting the teams together is safe.
+    await tx.band.deleteMany({ where: { team: { rosterId } } });
     await tx.team.deleteMany({ where: { rosterId } });
     await tx.roster.delete({ where: { id: rosterId } });
   }

@@ -350,6 +350,22 @@ async function main() {
       teamDetail.body.players.every((p, i, a) => i === 0 || a[i - 1].jerseyNumber <= p.jerseyNumber),
     teamDetail.body.players?.length);
 
+  // Bands & rivalries: a generated team carries a band profile and one rival.
+  ok('team detail includes a band profile (name, style, chant, tradition)',
+    !!teamDetail.body.band && !!teamDetail.body.band.name && !!teamDetail.body.band.style &&
+      !!teamDetail.body.band.chant && !!teamDetail.body.band.tradition,
+    teamDetail.body.band);
+  ok('team detail names a rival with a classic-game name',
+    !!teamDetail.body.rival && !!teamDetail.body.rival.teamId &&
+      teamDetail.body.rival.teamId !== teamDetail.body.id &&
+      typeof teamDetail.body.rival.classicGameName === 'string',
+    teamDetail.body.rival);
+  const rivalDetail = await api('GET', `/teams/${teamDetail.body.rival.teamId}`, { user: USER_A });
+  ok('rivalry is symmetric: the rival names this team back with the same classic game',
+    rivalDetail.status === 200 && rivalDetail.body.rival?.teamId === teamDetail.body.id &&
+      rivalDetail.body.rival?.classicGameName === teamDetail.body.rival.classicGameName,
+    rivalDetail.body.rival);
+
   const aPlayerId = teamDetail.body.players?.[0]?.id;
   const playerDetail = await api('GET', `/players/${aPlayerId}`, { user: USER_A });
   ok('GET /players/:id returns player detail with team and overall rating',
@@ -380,6 +396,20 @@ async function main() {
       sched.body.weeks.every((w) => w.games.length === 4 && w.games.every((g) => g.status === 'PENDING')),
     { weeks: sched.body.weeks?.length, next: sched.body.nextWeek });
   ok('a fresh schedule reports nextWeek === 1', sched.body.nextWeek === 1, sched.body.nextWeek);
+
+  // Rivalry-aware scheduling: rival matchups are labeled and placed in the later half.
+  const allSchedGames = sched.body.weeks.flatMap((w) => w.games.map((g) => ({ ...g, week: w.week })));
+  const rivalryGames = allSchedGames.filter((g) => g.isRivalry);
+  ok('the schedule labels the four rival matchups (isRivalry + classicGameName)',
+    rivalryGames.length === 4 &&
+      rivalryGames.every((g) => g.isHomecoming && typeof g.classicGameName === 'string' && g.classicGameName),
+    rivalryGames.map((g) => `w${g.week} ${g.classicGameName}`));
+  ok('non-rivalry games carry no rivalry labels',
+    allSchedGames.filter((g) => !g.isRivalry).every((g) => !g.isHomecoming && g.classicGameName === null),
+    allSchedGames.filter((g) => !g.isRivalry).length);
+  ok('rival games are placed in the later half of the 7-week season (weeks > 3.5)',
+    rivalryGames.every((g) => g.week > 3.5),
+    rivalryGames.map((g) => g.week));
 
   const regen = await api('POST', `/leagues/${GEN}/schedule`, { user: USER_A });
   ok('regenerating an existing schedule is rejected (409)', regen.status === 409, regen.body);

@@ -64,9 +64,19 @@ export default async function SchedulePage({
               const played = g.status === 'COMPLETE';
               const row = (
                 <div className="flex items-center justify-between py-1 text-sm">
-                  <span>
-                    {g.away.teamName} <span className="text-muted-foreground">at</span>{' '}
-                    {g.home.teamName}
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span>
+                      {g.away.teamName} <span className="text-muted-foreground">at</span>{' '}
+                      {g.home.teamName}
+                    </span>
+                    {g.classicGameName ? (
+                      <Badge variant="secondary">{g.classicGameName}</Badge>
+                    ) : g.isRivalry ? (
+                      <Badge variant="secondary">Rivalry</Badge>
+                    ) : null}
+                    {g.isHomecoming && (
+                      <Badge variant="outline">Homecoming</Badge>
+                    )}
                   </span>
                   <span className={played ? 'font-medium' : 'text-muted-foreground'}>
                     {played ? `${g.awayScore} – ${g.homeScore}` : 'scheduled'}

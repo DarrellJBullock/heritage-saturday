@@ -66,6 +66,53 @@ export default async function TeamPage({
         )}
       </div>
 
+      {(team.band || team.rival) && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {team.band && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{team.band.name}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm flex flex-col gap-2">
+                <div>
+                  <span className="text-muted-foreground">Style: </span>
+                  {team.band.style}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Signature chant: </span>
+                  <span className="italic">“{team.band.chant}”</span>
+                </div>
+                <p className="text-muted-foreground">{team.band.tradition}</p>
+              </CardContent>
+            </Card>
+          )}
+          {team.rival && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Rivalry</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm flex flex-col gap-2">
+                <div>
+                  <span className="text-muted-foreground">Rival: </span>
+                  <Link
+                    href={`/leagues/${leagueId}/teams/${team.rival.teamId}`}
+                    className="font-medium underline underline-offset-2 hover:text-foreground"
+                  >
+                    {team.rival.teamName}
+                  </Link>
+                </div>
+                {team.rival.classicGameName && (
+                  <div>
+                    <span className="text-muted-foreground">The annual meeting: </span>
+                    {team.rival.classicGameName}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">

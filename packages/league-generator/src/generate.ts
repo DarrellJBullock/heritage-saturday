@@ -1,6 +1,7 @@
 import {
   createRng,
   rngInt,
+  rngPick,
   Rng,
   Position,
   REQUIRED_STARTING_POSITIONS,
@@ -13,6 +14,11 @@ import {
   FIRST_NAMES,
   LAST_NAMES,
   COLOR_PAIRS,
+  BAND_ENSEMBLE_WORDS,
+  BAND_STYLES,
+  BAND_CHANTS,
+  BAND_TRADITIONS,
+  CLASSIC_GAME_NAMES,
 } from './data';
 import { GeneratedLeague, GeneratedPlayer, GeneratedTeam, GenerateLeagueOptions } from './types';
 
@@ -163,6 +169,16 @@ export function generateLeague({ size, seed }: GenerateLeagueOptions): Generated
   const teams: GeneratedTeam[] = [];
   for (let i = 0; i < size; i++) {
     const [primaryColor, secondaryColor] = COLOR_PAIRS[i % COLOR_PAIRS.length];
+    // Rivalries pair adjacent teams; divisions are contiguous even-sized blocks (see buildSlots),
+    // so [2k, 2k+1] pairs are always within the same division. Symmetric by construction.
+    const rivalIndex = i % 2 === 0 ? i + 1 : i - 1;
+    const classicGameName = CLASSIC_GAME_NAMES[Math.floor(i / 2) % CLASSIC_GAME_NAMES.length];
+    const band = {
+      name: `${nicknames[i]} ${rngPick(rng, [...BAND_ENSEMBLE_WORDS])}`,
+      style: rngPick(rng, [...BAND_STYLES]),
+      chant: rngPick(rng, [...BAND_CHANTS]),
+      tradition: rngPick(rng, [...BAND_TRADITIONS]),
+    };
     teams.push({
       name: `${cities[i]} ${nicknames[i]}`,
       city: cities[i],
@@ -171,6 +187,9 @@ export function generateLeague({ size, seed }: GenerateLeagueOptions): Generated
       division: slots[i].division,
       primaryColor,
       secondaryColor,
+      band,
+      rivalIndex,
+      classicGameName,
       players: generatePlayers(rng, firstNames, lastNames),
     });
   }
