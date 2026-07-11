@@ -43,7 +43,7 @@ export default async function StandingsPage({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold">Standings</h1>
+        <h1 className="text-xl font-bold tracking-tight">Standings</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Win–loss, points for/against, and differential from completed season games.
         </p>
@@ -75,15 +75,21 @@ export default async function StandingsPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {group.rows.map((r) => (
+                {group.rows.map((r, i) => (
                   <TableRow key={r.teamId}>
                     <TableCell>
-                      <Link
-                        href={`/leagues/${leagueId}/teams/${r.teamId}`}
-                        className="underline underline-offset-2 hover:text-foreground"
-                      >
-                        {r.teamName}
-                      </Link>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${i === 0 ? 'bg-brand-accent' : 'bg-transparent'}`}
+                          aria-hidden
+                        />
+                        <Link
+                          href={`/leagues/${leagueId}/teams/${r.teamId}`}
+                          className={`underline underline-offset-2 hover:text-foreground ${i === 0 ? 'font-semibold' : ''}`}
+                        >
+                          {r.teamName}
+                        </Link>
+                      </span>
                     </TableCell>
                     <TableCell className="text-right font-medium">{r.wins}</TableCell>
                     <TableCell className="text-right">{r.losses}</TableCell>

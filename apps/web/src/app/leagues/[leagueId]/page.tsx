@@ -66,7 +66,7 @@ export default async function LeagueHomePage({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div>
-            <h1 className="text-xl font-semibold">{league.name}</h1>
+            <h1 className="text-xl font-bold tracking-tight">{league.name}</h1>
             <p className="text-muted-foreground text-sm mt-1">
               {league.teamCount} {league.teamCount === 1 ? 'team' : 'teams'}
               {league.templateKey ? ' · generated from a template' : ''}
@@ -130,8 +130,11 @@ export default async function LeagueHomePage({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {teams.map((team) => (
-            <Card key={team.id}>
-              <Link href={`/leagues/${leagueId}/teams/${team.id}`}>
+            <Card
+              key={team.id}
+              className="hover:border-l-brand-accent border-l-4 border-l-transparent transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <Link href={`/leagues/${leagueId}/teams/${team.id}`} className="block">
                 <CardHeader className="flex-row items-center justify-between space-y-0">
                   <CardTitle className="text-base">{team.teamName}</CardTitle>
                   {team.conference && <Badge variant="secondary">{team.conference}</Badge>}

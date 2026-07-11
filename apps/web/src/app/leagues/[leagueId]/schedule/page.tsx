@@ -41,7 +41,7 @@ export default async function SchedulePage({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Schedule</h1>
+          <h1 className="text-xl font-bold tracking-tight">Schedule</h1>
           <p className="text-muted-foreground text-sm mt-1">
             {hasSchedule
               ? schedule.nextWeek === null
