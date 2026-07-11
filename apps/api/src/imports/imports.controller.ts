@@ -5,11 +5,15 @@ import {
   HttpStatus,
   Param,
   Post,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { buildBlankTemplate } from '@heritage-saturday/importers';
 import { ImportsService } from './imports.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { RequestUser } from '../common/auth/trusted-proxy-user.middleware';
@@ -17,6 +21,8 @@ import {
   LeagueByParamCapabilityGuard,
   RequireCapability,
 } from '../common/guards/capability.guards';
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 // Imports are nested under a league — a roster is always imported *into* a league. Importing is
 // the `import` capability (owner/commissioner/manager); the whole controller is gated by it, so
@@ -27,6 +33,16 @@ import {
 @UseGuards(LeagueByParamCapabilityGuard)
 export class ImportsController {
   constructor(private readonly importsService: ImportsService) {}
+
+  // Blank .xlsx with the expected `teams` and `players` header rows, for filling in and importing.
+  @Get('template')
+  template(@Res({ passthrough: true }) res: Response) {
+    res.set({
+      'Content-Type': XLSX_MIME,
+      'Content-Disposition': 'attachment; filename="heritage-saturday-import-template.xlsx"',
+    });
+    return new StreamableFile(buildBlankTemplate());
+  }
 
   @Post('roster')
   @UseInterceptors(FileInterceptor('file'))

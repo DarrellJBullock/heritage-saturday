@@ -8,6 +8,7 @@ import {
   RosterListItemDto,
 } from '@heritage-saturday/shared';
 import { generateLeague } from '@heritage-saturday/league-generator';
+import { buildRosterWorkbook, type ExportRow } from '@heritage-saturday/importers';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { DomainException } from '../common/errors/domain-exception';
 
@@ -210,5 +211,66 @@ export class LeaguesService {
     role: LeagueRole,
   ): LeagueListItemDto {
     return { id, name, size, templateKey, teamCount, createdAt: createdAt.toISOString(), role };
+  }
+
+  /**
+   * Export the league's teams and players as an .xlsx, keyed by the canonical import columns so
+   * the file re-imports cleanly. Access is enforced by LeagueReadAccessGuard on the route.
+   */
+  async exportWorkbook(leagueId: string): Promise<{ fileName: string; buffer: Buffer }> {
+    const league = await this.prisma.league.findUnique({ where: { id: leagueId } });
+    if (!league) {
+      throw new DomainException(404, 'NOT_FOUND', 'League not found');
+    }
+    const teams = await this.prisma.team.findMany({
+      where: { roster: { leagueId } },
+      orderBy: { externalTeamId: 'asc' },
+      include: { players: { orderBy: { jerseyNumber: 'asc' } } },
+    });
+
+    const teamRows: ExportRow[] = teams.map((t) => ({
+      team_id: t.externalTeamId,
+      team_name: t.teamName,
+      abbreviation: t.abbreviation,
+      city: t.city,
+      state: t.state,
+      conference: t.conference,
+      division: t.division,
+      coach_name: t.coachName,
+      primary_color: t.primaryColor,
+      secondary_color: t.secondaryColor,
+    }));
+
+    const playerRows: ExportRow[] = teams.flatMap((t) =>
+      t.players.map((p) => ({
+        player_id: p.externalPlayerId,
+        team_id: t.externalTeamId,
+        first_name: p.firstName,
+        last_name: p.lastName,
+        position: p.position,
+        jersey_number: p.jerseyNumber,
+        archetype: p.archetype,
+        overall_rating: p.overallRating,
+        speed: p.speed,
+        strength: p.strength,
+        awareness: p.awareness,
+        throw_power: p.throwPower,
+        throw_accuracy: p.throwAccuracy,
+        catching: p.catching,
+        route_running: p.routeRunning,
+        carry: p.carry,
+        trucking: p.trucking,
+        pass_block: p.passBlock,
+        run_block: p.runBlock,
+        tackle: p.tackle,
+        coverage: p.coverage,
+        kick_power: p.kickPower,
+        kick_accuracy: p.kickAccuracy,
+        headshot_url: p.headshotUrl,
+      })),
+    );
+
+    const slug = league.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'league';
+    return { fileName: `${slug}-roster.xlsx`, buffer: buildRosterWorkbook(teamRows, playerRows) };
   }
 }
