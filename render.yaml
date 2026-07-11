@@ -1,0 +1,71 @@
+# Render Blueprint — deploys Heritage Saturday as three managed resources:
+#   heritage-postgres  managed Postgres (the app database)
+#   heritage-api       NestJS API (apps/api)  — reachable publicly but gated by a shared secret
+#   heritage-web       Next.js web app (apps/web) — the only surface a browser talks to
+#
+# How to use: in the Render dashboard, New > Blueprint, connect this repo. Render reads this
+# file and creates everything. Then set the two secrets it can't generate — the Google OAuth
+# credentials on heritage-web (AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET) — and add the redirect URI
+# https://<heritage-web-url>/api/auth/callback/google in the Google Cloud console.
+# See docs/deploy-render.md for the full walkthrough.
+#
+# Why the API is a *web* service, not a private service: Render's private services and
+# background workers have no free tier. The API is instead a free web service protected by
+# API_SHARED_SECRET (its purpose), and the browser never calls it — apps/web proxies every
+# API request server-side through its own /api/proxy route and reaches the API over Render's
+# internal network at http://heritage-api:3001. The public URL exists but is useless without
+# the secret.
+
+databases:
+  - name: heritage-postgres
+    plan: free # NOTE: free Postgres is deleted 90 days after creation; move to a paid plan to persist.
+    databaseName: heritage_saturday
+    user: heritage
+    region: oregon
+
+services:
+  # ---- API (apps/api) ------------------------------------------------------
+  - type: web
+    name: heritage-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: . # monorepo: the API build needs packages/* and the root lockfile
+    # Run pending migrations, then start. Safe on a single instance; if you ever scale to
+    # multiple replicas, move this to a preDeploy command so replicas don't race the migration.
+    dockerCommand: sh -c "node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma && node apps/api/dist/main.js"
+    envVars:
+      - key: PORT # the API reads PORT (main.ts); pin it so heritage-web can address it internally
+        value: 3001
+      - key: DATABASE_URL
+        fromDatabase:
+          name: heritage-postgres
+          property: connectionString
+      - key: API_SHARED_SECRET # Render generates a strong value; heritage-web copies it below
+        generateValue: true
+
+  # ---- Web (apps/web) ------------------------------------------------------
+  - type: web
+    name: heritage-web
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: API_URL # internal address of the API service — never leaves the server
+        value: http://heritage-api:3001
+      - key: API_SHARED_SECRET # must match the API; pulled from that service, not re-generated
+        fromService:
+          type: web
+          name: heritage-api
+          envVarKey: API_SHARED_SECRET
+      - key: AUTH_SECRET # signs the session cookie; Render generates it
+        generateValue: true
+      - key: AUTH_TRUST_HOST # trust Render's fronting proxy for the request Host (see apps/web Dockerfile)
+        value: true
+      - key: AUTH_GOOGLE_ID # set in the dashboard after creating a Google OAuth client
+        sync: false
+      - key: AUTH_GOOGLE_SECRET
+        sync: false
