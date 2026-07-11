@@ -22,15 +22,19 @@ export default async function LeaguesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-6">
+      <div className="from-brand-strong via-brand to-brand-strong animate-in fade-in slide-in-from-bottom-2 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-br p-6 shadow-lg duration-500">
         <div>
-          <h1 className="text-xl font-semibold">Your Leagues</h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <h1 className="text-xl font-bold tracking-tight text-white">Your Leagues</h1>
+          <p className="mt-1 max-w-md text-sm text-white/70">
             Create a league from a template to start playing, or set one up for your own rosters.
           </p>
         </div>
-        <Button size="sm" render={<Link href="/leagues/new" />}>
+        <Button
+          size="sm"
+          className="bg-brand-accent text-brand-accent-foreground hover:bg-brand-accent/90 shadow"
+          render={<Link href="/leagues/new" />}
+        >
           New League
         </Button>
       </div>
@@ -48,10 +52,13 @@ export default async function LeaguesPage() {
         </p>
       )}
 
-      <div className="flex flex-col gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         {leagues.map((league) => (
-          <Card key={league.id}>
-            <Link href={`/leagues/${league.id}`}>
+          <Card
+            key={league.id}
+            className="hover:border-brand/40 border-l-4 border-l-transparent transition-all duration-200 hover:-translate-y-0.5 hover:border-l-brand-accent hover:shadow-md"
+          >
+            <Link href={`/leagues/${league.id}`} className="block">
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base">{league.name}</CardTitle>
                 <div className="flex gap-1">

@@ -16,7 +16,7 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <SiteNav />
-        <main className="flex-1 w-full mx-auto max-w-3xl px-4 py-6">
+        <main className="flex-1 w-full mx-auto max-w-5xl px-4 py-6">
           {children}
         </main>
       </body>
