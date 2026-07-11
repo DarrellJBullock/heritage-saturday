@@ -84,6 +84,9 @@ export default async function LeagueHomePage({
               <Button size="sm" variant="outline" render={<Link href={`/leagues/${leagueId}/standings`} />}>
                 Standings
               </Button>
+              <Button size="sm" variant="outline" render={<Link href={`/leagues/${leagueId}/leaders`} />}>
+                Leaders
+              </Button>
               {canSimulate && (
                 <Button size="sm" render={<Link href={`/leagues/${leagueId}/games/new`} />}>
                   New Game
